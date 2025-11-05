@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <title>Hand Talk Clone</title>
+</head>
+<body>
+    <h1>Traductor de Lenguaje de Señas (Hand Talk Simplificado)</h1>
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <div>
+            <img src="{{ url_for('video_feed') }}" width="640" height="480"/>
+        </div>
+        <div style="font-size: 48px; font-weight: bold; min-width: 200px; text-align: center; padding: 20px; border: 2px solid #333; background-color: #f0f0f0;">
+            <div style="font-size: 24px; margin-bottom: 10px; color: #666;">Letra detectada:</div>
+            <div id="prediction-text" style="font-size: 72px; color: #2196F3;">-</div>
+        </div>
+    </div>
+
+    <button id="tts-btn">Reproducir explicación del gesto</button>
+    <audio id="audio" controls></audio>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Función para actualizar la predicción cada segundo
+        function updatePrediction() {
+            $.get('/get_prediction', function(data) {
+                const prediction = data.prediction;
+                // Extraer solo la letra si viene en formato "Letra: X"
+                const letter = prediction.includes(':') ? prediction.split(':')[1].trim() : prediction;
+                $('#prediction-text').text(letter || '-');
+            }).fail(function() {
+                $('#prediction-text').text('-');
+            });
+        }
+
+        // Llamar a la función cada 500 ms para actualización más fluida
+        setInterval(updatePrediction, 500);
+        
+        // Actualizar inmediatamente al cargar
+        updatePrediction();
+
+        $('#tts-btn').click(function() {
+            const text = $('#prediction-text').text();
+            
+            if(text && text !== '-'){
+                $.ajax({
+                    url: '/tts',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({text: text}),
+                    success: function(res){
+                        $('#audio').attr('src', res.audio);
+                        $('#audio')[0].play();
+                    }
+                });
+            } else {
+                alert('No hay letra detectada para reproducir');
+            }
+        });
+    </script>
+</body>
+</html>
