@@ -2,61 +2,277 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <title>Hand Talk Clone</title>
+    <title>Hand Talk Clone - Práctica de Letras</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .main-container {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+            margin-top: 20px;
+        }
+        .video-container {
+            flex: 1;
+        }
+        .info-panel {
+            flex: 0 0 350px;
+            background-color: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .target-letter {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .target-label {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .target-letter-display {
+            font-size: 120px;
+            font-weight: bold;
+            color: #2196F3;
+            margin: 20px 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .detected-letter {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .detected-label {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .detected-letter-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #666;
+        }
+        .detected-letter-display.correct {
+            color: #4CAF50;
+            animation: pulse 0.5s;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .progress {
+            text-align: center;
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #e3f2fd;
+            border-radius: 5px;
+        }
+        .button-container {
+            text-align: center;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s;
+        }
+        #next-btn {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+        #next-btn:hover:not(:disabled) {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+        #next-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        #reset-btn {
+            background-color: #ff9800;
+            color: white;
+        }
+        #reset-btn:hover {
+            background-color: #e68900;
+        }
+        .success-message {
+            text-align: center;
+            padding: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 5px;
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-    <h1>Traductor de Lenguaje de Señas (Hand Talk Simplificado)</h1>
-    <div style="display: flex; align-items: center; gap: 20px;">
-        <div>
-            <img src="{{ url_for('video_feed') }}" width="640" height="480"/>
+    <h1>Práctica de Lenguaje de Señas - Letra por Letra</h1>
+    
+    <div class="main-container">
+        <div class="video-container">
+            <img id="video-stream" src="{{ url_for('video_feed') }}" 
+                 width="640" height="480" 
+                 style="border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); background-color: #000; display: block;"
+                 alt="Video stream de la cámara"
+                 onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'480\'%3E%3Crect fill=\'%23000\' width=\'640\' height=\'480\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' fill=\'white\' font-size=\'20\' text-anchor=\'middle\' dominant-baseline=\'middle\'%3EError cargando video%3C/text%3E%3C/svg%3E';"/>
+            <div id="video-status" style="margin-top: 10px; text-align: center; color: #666; font-size: 14px;">
+                Conectando cámara...
+            </div>
         </div>
-        <div style="font-size: 48px; font-weight: bold; min-width: 200px; text-align: center; padding: 20px; border: 2px solid #333; background-color: #f0f0f0;">
-            <div style="font-size: 24px; margin-bottom: 10px; color: #666;">Letra detectada:</div>
-            <div id="prediction-text" style="font-size: 72px; color: #2196F3;">-</div>
+        
+        <div class="info-panel">
+            <div class="target-letter">
+                <div class="target-label">Letra objetivo:</div>
+                <div class="target-letter-display" id="target-letter">-</div>
+            </div>
+            
+            <div class="detected-letter">
+                <div class="detected-label">Letra detectada:</div>
+                <div class="detected-letter-display" id="detected-letter">-</div>
+            </div>
+            
+            <div class="progress" id="progress">Progreso: 0/24</div>
+            
+            <div class="button-container">
+                <button id="next-btn" disabled>Siguiente Letra</button>
+                <br>
+                <button id="reset-btn">Reiniciar Práctica</button>
+            </div>
+            
+            <div class="success-message" id="success-message"></div>
         </div>
     </div>
 
-    <button id="tts-btn">Reproducir explicación del gesto</button>
-    <audio id="audio" controls></audio>
-
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // Función para actualizar la predicción cada segundo
-        function updatePrediction() {
+        let isCompleted = false;
+
+        // Función para actualizar la información
+        function updateInfo() {
             $.get('/get_prediction', function(data) {
-                const prediction = data.prediction;
-                // Extraer solo la letra si viene en formato "Letra: X"
-                const letter = prediction.includes(':') ? prediction.split(':')[1].trim() : prediction;
-                $('#prediction-text').text(letter || '-');
+                // Actualizar letra objetivo
+                $('#target-letter').text(data.target_letter || '-');
+                
+                // Actualizar letra detectada
+                const detectedLetter = data.detected_letter || '-';
+                const detectedEl = $('#detected-letter');
+                detectedEl.text(detectedLetter);
+                
+                // Cambiar color si es correcta
+                if (data.letter_detected && detectedLetter !== '-') {
+                    detectedEl.addClass('correct');
+                } else {
+                    detectedEl.removeClass('correct');
+                }
+                
+                // Actualizar progreso
+                $('#progress').text(`Progreso: ${data.progress || '0/24'}`);
+                
+                // Habilitar/deshabilitar botón siguiente
+                if (data.letter_detected && !isCompleted) {
+                    $('#next-btn').prop('disabled', false);
+                } else {
+                    $('#next-btn').prop('disabled', true);
+                }
             }).fail(function() {
-                $('#prediction-text').text('-');
+                $('#detected-letter').text('-');
+                $('#next-btn').prop('disabled', true);
             });
         }
 
-        // Llamar a la función cada 500 ms para actualización más fluida
-        setInterval(updatePrediction, 500);
+        // Botón siguiente letra
+        $('#next-btn').click(function() {
+            $.ajax({
+                url: '/next_letter',
+                type: 'POST',
+                success: function(data) {
+                    if (data.completed) {
+                        isCompleted = true;
+                        $('#success-message').text(data.message).show();
+                        $('#next-btn').prop('disabled', true);
+                        $('#target-letter').text('✓');
+                    } else {
+                        updateInfo();
+                    }
+                }
+            });
+        });
+
+        // Botón reiniciar
+        $('#reset-btn').click(function() {
+            $.ajax({
+                url: '/reset_practice',
+                type: 'POST',
+                success: function(data) {
+                    isCompleted = false;
+                    $('#success-message').hide();
+                    updateInfo();
+                }
+            });
+        });
+
+        // Verificar estado del video
+        const videoImg = document.getElementById('video-stream');
+        const videoStatus = document.getElementById('video-status');
+        let videoCheckCount = 0;
+        
+        function checkVideoStatus() {
+            videoCheckCount++;
+            if (videoImg.naturalWidth > 0 && videoImg.naturalHeight > 0) {
+                videoStatus.textContent = 'Cámara conectada ✓';
+                videoStatus.style.color = '#4CAF50';
+            } else if (videoCheckCount < 20) {
+                videoStatus.textContent = `Conectando cámara... (${videoCheckCount}/20)`;
+            } else {
+                videoStatus.innerHTML = '⚠ Verificando cámara...<br>Si no aparece, verifica:<br>1. La cámara esté conectada<br>2. No esté en uso por otra app<br>3. Permisos habilitados';
+                videoStatus.style.color = '#ff9800';
+            }
+        }
+        
+        // Verificar cada segundo
+        const videoCheckInterval = setInterval(checkVideoStatus, 1000);
+        
+        // Limpiar cuando el video cargue
+        videoImg.onload = function() {
+            clearInterval(videoCheckInterval);
+            videoStatus.textContent = 'Cámara conectada ✓';
+            videoStatus.style.color = '#4CAF50';
+        };
+        
+        videoImg.onerror = function() {
+            clearInterval(videoCheckInterval);
+            videoStatus.innerHTML = '❌ Error al cargar video<br>Verifica la consola del servidor';
+            videoStatus.style.color = '#f44336';
+        };
+
+        // Actualizar cada 300 ms para respuesta más rápida
+        setInterval(updateInfo, 300);
         
         // Actualizar inmediatamente al cargar
-        updatePrediction();
-
-        $('#tts-btn').click(function() {
-            const text = $('#prediction-text').text();
-            
-            if(text && text !== '-'){
-                $.ajax({
-                    url: '/tts',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({text: text}),
-                    success: function(res){
-                        $('#audio').attr('src', res.audio);
-                        $('#audio')[0].play();
-                    }
-                });
-            } else {
-                alert('No hay letra detectada para reproducir');
-            }
-        });
+        updateInfo();
     </script>
 </body>
 </html>

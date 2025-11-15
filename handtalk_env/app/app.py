@@ -1,3 +1,13 @@
+"""
+Aplicación Flask para reconocimiento de gestos en lenguaje de señas.
+
+CONFIGURACIÓN DEL MODELO:
+- El código está configurado para usar PRIMERO el modelo reentrenado (gesture_model_camera.h5)
+  si existe
+- Si no existe el modelo reentrenado, usa el modelo original (gesture_model.h5)
+- Para reentrenar el modelo con imágenes de tu cámara, ejecuta: python train_camera_model.py
+- El modelo reentrenado se guarda en: model/gesture_model_camera.h5
+"""
 from flask import Flask, render_template, Response, request, jsonify
 import cv2
 import mediapipe as mp
@@ -12,7 +22,6 @@ model = None
 # Sign Language MNIST tiene 24 clases (0-24, pero falta el 9 que es J)
 # El modelo fue entrenado con este dataset, así que las clases son:
 # 0-8: A-I, 10-24: K-Y (J no está porque requiere movimiento)
-# IMPORTANTE: El modelo tiene 25 clases según la inspección, pero el dataset tiene 24
 # Esto puede causar problemas de mapeo
 asl_letters = ['A','B','C','D','E','F','G','H','I','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y']
 # Crear mapeo: índice del modelo -> letra
@@ -27,6 +36,12 @@ for i in range(25):
         class_names.append(asl_letters[i-1] if (i-1) < len(asl_letters) else f'Clase_{i}')  # 10-24: K-Y
 # Variable global para almacenar la predicción actual
 current_prediction = "Esperando gesto..."
+
+# Variables globales para el modo de práctica letra por letra
+# Obtener las letras disponibles del modelo (sin J, que es la clase 9)
+available_letters = [letter for letter in asl_letters]  # A-Y sin J
+current_letter_index = 0  # Índice de la letra objetivo actual
+letter_detected = False  # Si la letra objetivo fue detectada correctamente
 
 try:
     import tensorflow as tf
@@ -64,29 +79,54 @@ try:
     ]
     
     MODEL_PATH = None
+    print(f"\n{'='*60}")
+    print(f"BÚSQUEDA DEL MODELO DE RECONOCIMIENTO DE GESTOS")
+    print(f"{'='*60}")
     print(f"Directorio del script: {script_dir}")
     print(f"Directorio de trabajo actual: {os.getcwd()}")
-    print(f"Buscando modelo en las siguientes ubicaciones:")
+    print(f"\nPrioridad: Se busca PRIMERO el modelo REENTRENADO (gesture_model_camera.h5)")
+    print(f"          Luego el modelo original (gesture_model.h5)")
+    print(f"\nBuscando modelo en las siguientes ubicaciones:")
     
     for path in possible_paths:
         abs_path = os.path.abspath(path)
         exists = os.path.exists(path)
-        model_type = " (REENTRENADO)" if "camera" in path else ""
+        model_type = " (REENTRENADO - PRIORIDAD)" if "camera" in path else ""
         print(f"  {'✓' if exists else '✗'} {abs_path}{model_type}")
         if exists and MODEL_PATH is None:
             MODEL_PATH = path
             if "camera" in path:
-                print(f"  → Modelo REENTRENADO encontrado en: {abs_path}")
+                print(f"\n  {'='*60}")
+                print(f"  ✓✓✓ Modelo REENTRENADO encontrado y seleccionado")
+                print(f"  {'='*60}")
+                print(f"  → Ruta: {abs_path}")
+                print(f"  → Este modelo fue entrenado con imágenes de tu cámara")
+                print(f"  → Debería tener mejor precisión que el modelo original")
             else:
-                print(f"  → Modelo encontrado en: {abs_path}")
+                print(f"\n  {'='*60}")
+                print(f"  ✓ Modelo ORIGINAL encontrado y seleccionado")
+                print(f"  {'='*60}")
+                print(f"  → Ruta: {abs_path}")
+                print(f"  → Nota: Si tienes un modelo reentrenado, debería estar en:")
+                print(f"    {os.path.join(script_dir, 'model', 'gesture_model_camera.h5')}")
     
     if MODEL_PATH and load_model_func:
         try:
             print(f"\nIntentando cargar modelo desde: {os.path.abspath(MODEL_PATH)}")
             # Intentar cargar directamente primero
+            is_retrained = "camera" in MODEL_PATH
+            model_type_str = "REENTRENADO" if is_retrained else "ORIGINAL"
             try:
                 model = load_model_func(MODEL_PATH)
-                print(f"✓✓✓ Modelo cargado correctamente!")
+                print(f"\n{'='*60}")
+                print(f"✓✓✓ Modelo {model_type_str} cargado correctamente!")
+                print(f"{'='*60}")
+                if is_retrained:
+                    print(f"  → Usando modelo entrenado con imágenes de tu cámara")
+                    print(f"  → Este modelo debería tener mejor precisión para tus condiciones")
+                else:
+                    print(f"  → Usando modelo original del dataset Sign Language MNIST")
+                    print(f"  → Para mejor precisión, reentrena con: python train_camera_model.py")
             except Exception as e1:
                 # Si falla por batch_shape, intentar cargar solo los pesos
                 if "batch_shape" in str(e1) or "Unrecognized keyword" in str(e1):
@@ -116,8 +156,16 @@ try:
                         # Cargar solo los pesos
                         print("   Cargando pesos del modelo...")
                         model.load_weights(MODEL_PATH, by_name=True, skip_mismatch=False)
-                        print(f"✓✓✓ Modelo reconstruido y pesos cargados correctamente!")
+                        is_retrained = "camera" in MODEL_PATH
+                        model_type_str = "REENTRENADO" if is_retrained else "ORIGINAL"
+                        print(f"\n{'='*60}")
+                        print(f"✓✓✓ Modelo {model_type_str} reconstruido y pesos cargados correctamente!")
+                        print(f"{'='*60}")
                         print(f"   Nota: Modelo tiene {num_classes} clases, usando índices 0-{num_classes-1}")
+                        if is_retrained:
+                            print(f"   → Usando modelo entrenado con imágenes de tu cámara")
+                        else:
+                            print(f"   → Usando modelo original del dataset Sign Language MNIST")
                     except Exception as e2:
                         print(f"✗✗✗ ERROR al reconstruir el modelo: {e2}")
                         import traceback
@@ -272,13 +320,38 @@ def detect_gesture(frame, landmarks):
         return None
 
 def generate_frames():
-    global current_prediction
-    cap = cv2.VideoCapture(0)
+    global current_prediction, letter_detected
+    print("🎥 Iniciando captura de video...")
+    cap = None
     frame_count = 0
     
-    if not cap.isOpened():
-        print("ERROR: No se pudo abrir la cámara")
+    # Intentar abrir la cámara con diferentes índices
+    for camera_index in range(5):
+        cap = cv2.VideoCapture(camera_index)
+        if cap.isOpened():
+            # Configurar resolución
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            print(f"✓ Cámara abierta en índice {camera_index}")
+            break
+        else:
+            cap.release()
+    
+    if cap is None or not cap.isOpened():
+        print("❌ ERROR: No se pudo abrir ninguna cámara")
         current_prediction = "Error: Cámara no disponible"
+        # Generar un frame de error para que el navegador muestre algo
+        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(error_frame, "Camera not available", (150, 220), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(error_frame, "Check camera connection", (120, 260), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        ret, buffer = cv2.imencode('.jpg', error_frame)
+        if ret:
+            frame_bytes = buffer.tobytes()
+            while True:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         return
     
     if model is None:
@@ -286,11 +359,23 @@ def generate_frames():
         print("   La aplicación no podrá reconocer gestos sin el modelo.")
         current_prediction = "ERROR: Modelo no disponible"
     
+    print("📹 Stream de video iniciado")
+    consecutive_errors = 0
+    
     while True:
         success, frame = cap.read()
         if not success:
-            print("ERROR: No se pudo leer frame de la cámara")
-            break
+            consecutive_errors += 1
+            if consecutive_errors > 10:
+                print("❌ ERROR: Demasiados errores al leer frames")
+                break
+            continue
+        
+        consecutive_errors = 0
+        
+        # Verificar que el frame sea válido
+        if frame is None or frame.size == 0:
+            continue
         
         frame = cv2.flip(frame, 1)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -307,10 +392,34 @@ def generate_frames():
                 gesture = detect_gesture(frame, landmarks)
                 if gesture:
                     current_prediction = f"Letra: {gesture}"
+                    # Verificar si la letra detectada coincide con la letra objetivo
+                    if current_letter_index < len(available_letters):
+                        target_letter = available_letters[current_letter_index]
+                        if gesture == target_letter:
+                            letter_detected = True
+                            # Log para debug cada 30 frames
+                            if frame_count % 30 == 0:
+                                print(f"✓✓✓ Letra CORRECTA detectada: {gesture} (objetivo: {target_letter}) - Botón debería habilitarse")
+                        else:
+                            # Solo resetear si NO es la letra correcta
+                            # Mantener el estado si ya se detectó correctamente antes
+                            if not letter_detected:
+                                letter_detected = False
+                            # Log para debug
+                            if frame_count % 30 == 0:
+                                print(f"✗ Letra detectada: {gesture} (objetivo: {target_letter}) - No coincide")
                 else:
                     current_prediction = "Mano detectada, procesando..."
+                    # No resetear letter_detected aquí si ya se detectó correctamente
+                    # Solo resetear si no hay gesto detectado Y no se había detectado antes
+                    if not letter_detected:
+                        letter_detected = False
         else:
             current_prediction = "Esperando mano..."
+            # No resetear letter_detected aquí si ya se detectó correctamente
+            # Solo resetear si no hay mano Y no se había detectado antes
+            if not letter_detected:
+                letter_detected = False
         
         # Log cada 30 frames (aproximadamente cada segundo a 30fps)
         frame_count += 1
@@ -355,10 +464,17 @@ def generate_frames():
             elif gesture:
                 print(f"Frame {frame_count}: ✓ Letra detectada: {gesture}")
         
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
+        # Codificar frame a JPEG con calidad optimizada
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ret:
+            print("⚠ Error al codificar frame")
+            continue
+        
+        frame_bytes = buffer.tobytes()
+        
+        # Enviar frame en formato MJPEG
         yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 @app.route('/')
 def index():
@@ -366,11 +482,88 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(
+        generate_frames(), 
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Connection': 'keep-alive'
+        }
+    )
 
 @app.route('/get_prediction')
 def get_prediction():
-    return jsonify({"prediction": current_prediction})
+    global letter_detected
+    
+    # Extraer solo la letra si viene en formato "Letra: X"
+    detected_letter = None
+    if current_prediction.startswith("Letra: "):
+        detected_letter = current_prediction.split(": ")[1]
+    
+    # Obtener la letra objetivo actual
+    target_letter = None
+    if current_letter_index < len(available_letters):
+        target_letter = available_letters[current_letter_index]
+    
+    # Verificar nuevamente la comparación aquí para asegurar que sea correcta
+    # Esto ayuda a mantener el estado consistente
+    if detected_letter and target_letter:
+        if detected_letter == target_letter:
+            letter_detected = True
+        # No resetear aquí, dejar que el loop de video lo maneje
+    
+    return jsonify({
+        "prediction": current_prediction,
+        "detected_letter": detected_letter,
+        "target_letter": target_letter,
+        "letter_detected": letter_detected,
+        "current_index": current_letter_index,
+        "total_letters": len(available_letters),
+        "progress": f"{current_letter_index + 1}/{len(available_letters)}",
+        "debug": {
+            "detected": detected_letter,
+            "target": target_letter,
+            "match": detected_letter == target_letter if detected_letter and target_letter else False,
+            "letter_detected_state": letter_detected
+        }
+    })
+
+@app.route('/next_letter', methods=['POST'])
+def next_letter():
+    global current_letter_index, letter_detected
+    print(f"→ Botón 'Siguiente Letra' presionado. Índice actual: {current_letter_index}")
+    if current_letter_index < len(available_letters) - 1:
+        current_letter_index += 1
+        letter_detected = False
+        print(f"→ Avanzando a la letra: {available_letters[current_letter_index]} ({current_letter_index + 1}/{len(available_letters)})")
+        return jsonify({
+            "success": True,
+            "current_index": current_letter_index,
+            "target_letter": available_letters[current_letter_index],
+            "progress": f"{current_letter_index + 1}/{len(available_letters)}"
+        })
+    else:
+        # Ya se completaron todas las letras
+        print("→ ¡Todas las letras completadas!")
+        return jsonify({
+            "success": True,
+            "completed": True,
+            "message": "¡Felicidades! Has completado todo el abecedario."
+        })
+
+@app.route('/reset_practice', methods=['POST'])
+def reset_practice():
+    global current_letter_index, letter_detected
+    current_letter_index = 0
+    letter_detected = False
+    return jsonify({
+        "success": True,
+        "current_index": current_letter_index,
+        "target_letter": available_letters[current_letter_index],
+        "progress": f"{current_letter_index + 1}/{len(available_letters)}"
+    })
 
 @app.route('/translate', methods=['POST'])
 def translate():
