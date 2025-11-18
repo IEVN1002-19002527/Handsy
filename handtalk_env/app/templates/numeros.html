@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <title>Hand Talk - Práctica de Letras</title>
+    <title>Hand Talk - Práctica de Números</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -31,7 +31,7 @@
             padding: 25px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .target-letter {
+        .target-number {
             text-align: center;
             margin-bottom: 30px;
         }
@@ -40,14 +40,14 @@
             color: #666;
             margin-bottom: 10px;
         }
-        .target-letter-display {
+        .target-number-display {
             font-size: 120px;
             font-weight: bold;
             color: #2196F3;
             margin: 20px 0;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
-        .detected-letter {
+        .detected-number {
             text-align: center;
             margin-bottom: 30px;
             padding: 15px;
@@ -59,12 +59,12 @@
             color: #666;
             margin-bottom: 8px;
         }
-        .detected-letter-display {
+        .detected-number-display {
             font-size: 48px;
             font-weight: bold;
             color: #666;
         }
-        .detected-letter-display.correct {
+        .detected-number-display.correct {
             color: #4CAF50;
             animation: pulse 0.5s;
         }
@@ -129,7 +129,7 @@
     </style>
 </head>
 <body>
-    <h1>Práctica de Lenguaje de Señas - Letra por Letra</h1>
+    <h1>Práctica de Lenguaje de Señas - Número por Número</h1>
     
     <div class="main-container">
         <div class="video-container">
@@ -144,20 +144,20 @@
         </div>
         
         <div class="info-panel">
-            <div class="target-letter">
-                <div class="target-label">Letra objetivo:</div>
-                <div class="target-letter-display" id="target-letter">-</div>
+            <div class="target-number">
+                <div class="target-label">Número objetivo:</div>
+                <div class="target-number-display" id="target-number">-</div>
             </div>
             
-            <div class="detected-letter">
-                <div class="detected-label">Letra detectada:</div>
-                <div class="detected-letter-display" id="detected-letter">-</div>
+            <div class="detected-number">
+                <div class="detected-label">Número detectado:</div>
+                <div class="detected-number-display" id="detected-number">-</div>
             </div>
             
-            <div class="progress" id="progress">Progreso: 0/24</div>
+            <div class="progress" id="progress">Progreso: 0/10</div>
             
             <div class="button-container">
-                <button id="next-btn" disabled>Siguiente Letra</button>
+                <button id="next-btn" disabled>Siguiente Número</button>
                 <br>
                 <button id="reset-btn">Reiniciar Práctica</button>
             </div>
@@ -172,48 +172,48 @@
 
         // Función para actualizar la información
         function updateInfo() {
-            $.get('/get_prediction', function(data) {
-                // Actualizar letra objetivo
-                $('#target-letter').text(data.target_letter || '-');
+            $.get('/get_number_prediction', function(data) {
+                // Actualizar número objetivo
+                $('#target-number').text(data.target_number || '-');
                 
-                // Actualizar letra detectada
-                const detectedLetter = data.detected_letter || '-';
-                const detectedEl = $('#detected-letter');
-                detectedEl.text(detectedLetter);
+                // Actualizar número detectado
+                const detectedNumber = data.detected_number || '-';
+                const detectedEl = $('#detected-number');
+                detectedEl.text(detectedNumber);
                 
-                // Cambiar color si es correcta
-                if (data.letter_detected && detectedLetter !== '-') {
+                // Cambiar color si es correcto
+                if (data.number_detected && detectedNumber !== '-') {
                     detectedEl.addClass('correct');
                 } else {
                     detectedEl.removeClass('correct');
                 }
                 
                 // Actualizar progreso
-                $('#progress').text(`Progreso: ${data.progress || '0/24'}`);
+                $('#progress').text(`Progreso: ${data.progress || '0/10'}`);
                 
                 // Habilitar/deshabilitar botón siguiente
-                if (data.letter_detected && !isCompleted) {
+                if (data.number_detected && !isCompleted) {
                     $('#next-btn').prop('disabled', false);
                 } else {
                     $('#next-btn').prop('disabled', true);
                 }
             }).fail(function() {
-                $('#detected-letter').text('-');
+                $('#detected-number').text('-');
                 $('#next-btn').prop('disabled', true);
             });
         }
 
-        // Botón siguiente letra
+        // Botón siguiente número
         $('#next-btn').click(function() {
             $.ajax({
-                url: '/next_letter',
+                url: '/next_number',
                 type: 'POST',
                 success: function(data) {
                     if (data.completed) {
                         isCompleted = true;
                         $('#success-message').text(data.message).show();
                         $('#next-btn').prop('disabled', true);
-                        $('#target-letter').text('✓');
+                        $('#target-number').text('✓');
                     } else {
                         updateInfo();
                     }
@@ -224,7 +224,7 @@
         // Botón reiniciar
         $('#reset-btn').click(function() {
             $.ajax({
-                url: '/reset_practice',
+                url: '/reset_number_practice',
                 type: 'POST',
                 success: function(data) {
                     isCompleted = false;
@@ -276,3 +276,4 @@
     </script>
 </body>
 </html>
+

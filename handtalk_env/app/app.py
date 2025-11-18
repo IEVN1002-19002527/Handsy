@@ -1,10 +1,6 @@
 """
-Aplicación Flask para reconocimiento de gestos en lenguaje de señas.
-
 CONFIGURACIÓN DEL MODELO:
 - El código está configurado para usar PRIMERO el modelo reentrenado (gesture_model_camera.h5)
-  si existe
-- Si no existe el modelo reentrenado, usa el modelo original (gesture_model.h5)
 - Para reentrenar el modelo con imágenes de tu cámara, ejecuta: python train_camera_model.py
 - El modelo reentrenado se guarda en: model/gesture_model_camera.h5
 """
@@ -17,14 +13,13 @@ import os
 import random
 app = Flask(__name__)
 
-# Intentar importar TensorFlow y cargar el modelo
 model = None
+number_model = None  # Modelo separado para números
 # Sign Language MNIST tiene 24 clases (0-24, pero falta el 9 que es J)
 # El modelo fue entrenado con este dataset, así que las clases son:
 # 0-8: A-I, 10-24: K-Y (J no está porque requiere movimiento)
 # Esto puede causar problemas de mapeo
 asl_letters = ['A','B','C','D','E','F','G','H','I','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y']
-# Crear mapeo: índice del modelo -> letra
 # Si el modelo tiene 25 clases, puede que la clase 9 sea una clase adicional o esté vacía
 class_names = []
 for i in range(25):
@@ -42,6 +37,13 @@ current_prediction = "Esperando gesto..."
 available_letters = [letter for letter in asl_letters]  # A-Y sin J
 current_letter_index = 0  # Índice de la letra objetivo actual
 letter_detected = False  # Si la letra objetivo fue detectada correctamente
+
+# Variables globales para el modo de práctica número por número
+available_numbers = ['0', '1', '2', '3', '4', '5']  # Números del 0 al 5
+current_number_index = 0  # Índice del número objetivo actual
+number_detected = False  # Si el número objetivo fue detectado correctamente
+current_number_prediction = "Esperando gesto..."  # Predicción actual para números
+mode = 'letters'  # Modo actual: 'letters' o 'numbers'
 
 try:
     import tensorflow as tf
@@ -200,6 +202,72 @@ except Exception as e:
     traceback.print_exc()
     model = None
 
+# Cargar modelo de números (0-5)
+print(f"\n{'='*60}")
+print(f"BÚSQUEDA DEL MODELO DE NÚMEROS (0-5)")
+print(f"{'='*60}")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+number_model_paths = [
+    os.path.join(script_dir, 'model', 'number_model_camera.h5'),  # Modelo reentrenado
+    os.path.join(script_dir, 'model', 'number_model.h5'),  # Modelo original
+    os.path.join(script_dir, 'number_model.h5'),
+    os.path.join(os.path.dirname(script_dir), 'model', 'number_model.h5'),
+    'model/number_model.h5',
+    'number_model.h5',
+    os.path.join(os.getcwd(), 'model', 'number_model.h5'),
+    os.path.join(os.getcwd(), 'number_model.h5'),
+]
+
+NUMBER_MODEL_PATH = None
+for path in number_model_paths:
+    abs_path = os.path.abspath(path)
+    exists = os.path.exists(path)
+    if exists and NUMBER_MODEL_PATH is None:
+        NUMBER_MODEL_PATH = path
+        print(f"  ✓ Modelo de números encontrado: {abs_path}")
+        break
+
+if NUMBER_MODEL_PATH and load_model_func:
+    try:
+        print(f"Intentando cargar modelo de números desde: {os.path.abspath(NUMBER_MODEL_PATH)}")
+        try:
+            number_model = load_model_func(NUMBER_MODEL_PATH)
+            print(f"✓✓✓ Modelo de números cargado correctamente!")
+        except Exception as e1:
+            if "batch_shape" in str(e1) or "Unrecognized keyword" in str(e1):
+                print(f"⚠ Advertencia: Problema de compatibilidad. Reconstruyendo modelo...")
+                try:
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+                    
+                    num_classes = 6  # 0-5 son 6 clases
+                    number_model = Sequential([
+                        Conv2D(32, kernel_size=(3,3), activation='relu', input_shape=(28,28,1)),
+                        MaxPooling2D((2,2)),
+                        Conv2D(64, (3,3), activation='relu'),
+                        MaxPooling2D((2,2)),
+                        Flatten(),
+                        Dense(128, activation='relu'),
+                        Dropout(0.5),
+                        Dense(num_classes, activation='softmax')
+                    ])
+                    number_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                    number_model.load_weights(NUMBER_MODEL_PATH, by_name=True, skip_mismatch=False)
+                    print(f"✓✓✓ Modelo de números reconstruido y pesos cargados correctamente!")
+                except Exception as e2:
+                    print(f"✗✗✗ ERROR al reconstruir modelo de números: {e2}")
+                    number_model = None
+            else:
+                raise e1
+    except Exception as e:
+        print(f"✗✗✗ ERROR al cargar modelo de números: {e}")
+        number_model = None
+elif not NUMBER_MODEL_PATH:
+    print(f"⚠ Modelo de números NO encontrado. Usa 'train_number_model.py' para entrenarlo.")
+    print(f"  El modo de números no funcionará hasta que se entrene el modelo.")
+else:
+    print("⚠ No se pudo importar load_model para números")
+
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
@@ -319,8 +387,76 @@ def detect_gesture(frame, landmarks):
         print(f"Error en detect_gesture: {e}")
         return None
 
+def detect_number(frame, landmarks):
+    """Detectar número en señas (0-5)"""
+    if number_model is None:
+        return None
+    
+    try:
+        # Extraer bounding box de la mano con padding más generoso
+        h, w, _ = frame.shape
+        
+        # Calcular coordenadas de los landmarks
+        x_coords = [lm.x * w for lm in landmarks]
+        y_coords = [lm.y * h for lm in landmarks]
+        
+        # Calcular centro y dimensiones
+        center_x = (min(x_coords) + max(x_coords)) / 2
+        center_y = (min(y_coords) + max(y_coords)) / 2
+        width = max(x_coords) - min(x_coords)
+        height = max(y_coords) - min(y_coords)
+        
+        # Aumentar el tamaño del bounding box (50% más grande) y hacerlo cuadrado
+        max_dim = max(width, height) * 1.5
+        
+        x_min = max(0, int(center_x - max_dim / 2))
+        y_min = max(0, int(center_y - max_dim / 2))
+        x_max = min(w, int(center_x + max_dim / 2))
+        y_max = min(h, int(center_y + max_dim / 2))
+        
+        # Verificar que el bounding box tenga un tamaño mínimo razonable
+        if (x_max - x_min) < 50 or (y_max - y_min) < 50:
+            return None
+        
+        # Recortar y preprocesar
+        hand_img = frame[y_min:y_max, x_min:x_max]
+        if hand_img.size == 0:
+            return None
+        
+        # Preprocesamiento: escala de grises, 28x28, normalización
+        hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
+        hand_img = cv2.resize(hand_img, (28, 28), interpolation=cv2.INTER_AREA)
+        hand_img = hand_img.astype('float32') / 255.0
+        
+        hand_img = np.expand_dims(hand_img, axis=-1)  # Añadir dimensión de canal
+        hand_img = np.expand_dims(hand_img, axis=0)  # Añadir dimensión de batch
+        
+        # Predecir
+        prediction = number_model.predict(hand_img, verbose=0)
+        class_idx = np.argmax(prediction)
+        confidence = float(prediction[0][class_idx])
+        
+        # Umbral adaptativo similar a detect_gesture
+        max_confidence = prediction[0].max()
+        
+        if max_confidence < 0.30:
+            confidence_threshold = 0.15
+        elif max_confidence < 0.50:
+            confidence_threshold = 0.25
+        else:
+            confidence_threshold = 0.40
+        
+        # Mapear índice de clase a número (0-5)
+        if confidence > confidence_threshold and class_idx < 6:
+            return str(class_idx)  # Retornar como string: '0', '1', '2', '3', '4', '5'
+        else:
+            return None
+    except Exception as e:
+        print(f"Error en detect_number: {e}")
+        return None
+
 def generate_frames():
-    global current_prediction, letter_detected
+    global current_prediction, letter_detected, current_number_prediction, number_detected, mode
     print("🎥 Iniciando captura de video...")
     cap = None
     frame_count = 0
@@ -389,37 +525,66 @@ def generate_frames():
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 landmarks = hand_landmarks.landmark
                 debug_landmarks = landmarks  # Guardar para debug
-                gesture = detect_gesture(frame, landmarks)
-                if gesture:
-                    current_prediction = f"Letra: {gesture}"
-                    # Verificar si la letra detectada coincide con la letra objetivo
-                    if current_letter_index < len(available_letters):
-                        target_letter = available_letters[current_letter_index]
-                        if gesture == target_letter:
-                            letter_detected = True
-                            # Log para debug cada 30 frames
-                            if frame_count % 30 == 0:
-                                print(f"✓✓✓ Letra CORRECTA detectada: {gesture} (objetivo: {target_letter}) - Botón debería habilitarse")
-                        else:
-                            # Solo resetear si NO es la letra correcta
-                            # Mantener el estado si ya se detectó correctamente antes
-                            if not letter_detected:
-                                letter_detected = False
-                            # Log para debug
-                            if frame_count % 30 == 0:
-                                print(f"✗ Letra detectada: {gesture} (objetivo: {target_letter}) - No coincide")
+                
+                if mode == 'numbers':
+                    # Modo de números
+                    detected = detect_number(frame, landmarks)
+                    if detected:
+                        current_number_prediction = f"Número: {detected}"
+                        # Verificar si el número detectado coincide con el número objetivo
+                        if current_number_index < len(available_numbers):
+                            target_number = available_numbers[current_number_index]
+                            if detected == target_number:
+                                number_detected = True
+                                if frame_count % 30 == 0:
+                                    print(f"✓✓✓ Número CORRECTO detectado: {detected} (objetivo: {target_number})")
+                            else:
+                                if not number_detected:
+                                    number_detected = False
+                                if frame_count % 30 == 0:
+                                    print(f"✗ Número detectado: {detected} (objetivo: {target_number}) - No coincide")
+                    else:
+                        current_number_prediction = "Mano detectada, procesando..."
+                        if not number_detected:
+                            number_detected = False
                 else:
-                    current_prediction = "Mano detectada, procesando..."
-                    # No resetear letter_detected aquí si ya se detectó correctamente
-                    # Solo resetear si no hay gesto detectado Y no se había detectado antes
-                    if not letter_detected:
-                        letter_detected = False
+                    # Modo de letras (por defecto)
+                    gesture = detect_gesture(frame, landmarks)
+                    if gesture:
+                        current_prediction = f"Letra: {gesture}"
+                        # Verificar si la letra detectada coincide con la letra objetivo
+                        if current_letter_index < len(available_letters):
+                            target_letter = available_letters[current_letter_index]
+                            if gesture == target_letter:
+                                letter_detected = True
+                                # Log para debug cada 30 frames
+                                if frame_count % 30 == 0:
+                                    print(f"✓✓✓ Letra CORRECTA detectada: {gesture} (objetivo: {target_letter}) - Botón debería habilitarse")
+                            else:
+                                # Solo resetear si NO es la letra correcta
+                                # Mantener el estado si ya se detectó correctamente antes
+                                if not letter_detected:
+                                    letter_detected = False
+                                # Log para debug
+                                if frame_count % 30 == 0:
+                                    print(f"✗ Letra detectada: {gesture} (objetivo: {target_letter}) - No coincide")
+                    else:
+                        current_prediction = "Mano detectada, procesando..."
+                        # No resetear letter_detected aquí si ya se detectó correctamente
+                        # Solo resetear si no hay gesto detectado Y no se había detectado antes
+                        if not letter_detected:
+                            letter_detected = False
         else:
-            current_prediction = "Esperando mano..."
-            # No resetear letter_detected aquí si ya se detectó correctamente
-            # Solo resetear si no hay mano Y no se había detectado antes
-            if not letter_detected:
-                letter_detected = False
+            if mode == 'numbers':
+                current_number_prediction = "Esperando mano..."
+                if not number_detected:
+                    number_detected = False
+            else:
+                current_prediction = "Esperando mano..."
+                # No resetear letter_detected aquí si ya se detectó correctamente
+                # Solo resetear si no hay mano Y no se había detectado antes
+                if not letter_detected:
+                    letter_detected = False
         
         # Log cada 30 frames (aproximadamente cada segundo a 30fps)
         frame_count += 1
@@ -478,7 +643,15 @@ def generate_frames():
 
 @app.route('/')
 def index():
+    global mode
+    mode = 'letters'  # Establecer modo de letras
     return render_template('index.html')
+
+@app.route('/numeros')
+def numeros():
+    global mode
+    mode = 'numbers'  # Establecer modo de números
+    return render_template('numeros.html')
 
 @app.route('/video_feed')
 def video_feed():
@@ -563,6 +736,77 @@ def reset_practice():
         "current_index": current_letter_index,
         "target_letter": available_letters[current_letter_index],
         "progress": f"{current_letter_index + 1}/{len(available_letters)}"
+    })
+
+# Rutas para números
+@app.route('/get_number_prediction')
+def get_number_prediction():
+    global number_detected
+    
+    # Extraer solo el número si viene en formato "Número: X"
+    detected_number = None
+    if current_number_prediction.startswith("Número: "):
+        detected_number = current_number_prediction.split(": ")[1]
+    
+    # Obtener el número objetivo actual
+    target_number = None
+    if current_number_index < len(available_numbers):
+        target_number = available_numbers[current_number_index]
+    
+    # Verificar nuevamente la comparación aquí para asegurar que sea correcta
+    if detected_number and target_number:
+        if detected_number == target_number:
+            number_detected = True
+    
+    return jsonify({
+        "prediction": current_number_prediction,
+        "detected_number": detected_number,
+        "target_number": target_number,
+        "number_detected": number_detected,
+        "current_index": current_number_index,
+        "total_numbers": len(available_numbers),
+        "progress": f"{current_number_index + 1}/{len(available_numbers)}",
+        "debug": {
+            "detected": detected_number,
+            "target": target_number,
+            "match": detected_number == target_number if detected_number and target_number else False,
+            "number_detected_state": number_detected
+        }
+    })
+
+@app.route('/next_number', methods=['POST'])
+def next_number():
+    global current_number_index, number_detected
+    print(f"→ Botón 'Siguiente Número' presionado. Índice actual: {current_number_index}")
+    if current_number_index < len(available_numbers) - 1:
+        current_number_index += 1
+        number_detected = False
+        print(f"→ Avanzando al número: {available_numbers[current_number_index]} ({current_number_index + 1}/{len(available_numbers)})")
+        return jsonify({
+            "success": True,
+            "current_index": current_number_index,
+            "target_number": available_numbers[current_number_index],
+            "progress": f"{current_number_index + 1}/{len(available_numbers)}"
+        })
+    else:
+        # Ya se completaron todos los números
+        print("→ ¡Todos los números completados!")
+        return jsonify({
+            "success": True,
+            "completed": True,
+            "message": "¡Felicidades! Has completado todos los números del 0 al 5."
+        })
+
+@app.route('/reset_number_practice', methods=['POST'])
+def reset_number_practice():
+    global current_number_index, number_detected
+    current_number_index = 0
+    number_detected = False
+    return jsonify({
+        "success": True,
+        "current_index": current_number_index,
+        "target_number": available_numbers[current_number_index],
+        "progress": f"{current_number_index + 1}/{len(available_numbers)}"
     })
 
 @app.route('/translate', methods=['POST'])
