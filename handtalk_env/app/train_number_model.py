@@ -26,13 +26,13 @@ def load_images_from_directory(data_dir):
         class_dir = os.path.join(data_dir, class_name)
         
         if not os.path.exists(class_dir):
-            print(f"  ⚠ Directorio no encontrado: {class_dir}")
+            print(f"  [ADVERTENCIA] Directorio no encontrado: {class_dir}")
             continue
         
         image_files = [f for f in os.listdir(class_dir) if f.endswith('.png')]
         
         if len(image_files) == 0:
-            print(f"  ⚠ No hay imágenes para la clase '{class_name}'")
+            print(f"  [ADVERTENCIA] No hay imágenes para la clase '{class_name}'")
             continue
         
         print(f"  Cargando {len(image_files)} imágenes de la clase '{class_name}'...")
@@ -59,8 +59,8 @@ def load_images_from_directory(data_dir):
     if len(images) == 0:
         raise ValueError("No se encontraron imágenes para entrenar. Ejecuta 'collect_number_data.py' primero.")
     
-    print(f"\n✓ Total de imágenes cargadas: {len(images)}")
-    print(f"✓ Número de clases: {len(set(labels))}")
+    print(f"\n[OK] Total de imágenes cargadas: {len(images)}")
+    print(f"[OK] Número de clases: {len(set(labels))}")
     
     # Convertir a arrays de numpy
     images = np.array(images)
@@ -171,9 +171,9 @@ def fine_tune_model(images, labels, base_model_path=None):
         base_model = None
         try:
             base_model = tf.keras.models.load_model(base_model_path)
-            print("✓ Modelo base cargado completamente")
+            print("[OK] Modelo base cargado completamente")
         except Exception as e:
-            print(f"  ⚠ Error al cargar modelo: {e}")
+            print(f"  [ADVERTENCIA] Error al cargar modelo: {e}")
             print("  Intentando cargar solo pesos...")
         
         if base_model is None:
@@ -181,9 +181,9 @@ def fine_tune_model(images, labels, base_model_path=None):
             model = build_model(num_classes)
             try:
                 model.load_weights(base_model_path, by_name=True, skip_mismatch=True)
-                print("  ✓ Pesos cargados")
+                print("  [OK] Pesos cargados")
             except Exception as e2:
-                print(f"  ⚠ No se pudieron cargar los pesos: {e2}")
+                print(f"  [ADVERTENCIA] No se pudieron cargar los pesos: {e2}")
         else:
             try:
                 base_num_classes = base_model.layers[-1].output_shape[-1]
@@ -201,10 +201,10 @@ def fine_tune_model(images, labels, base_model_path=None):
                     print("  Construyendo nuevo modelo...")
                     model = build_model(num_classes)
             except Exception as e:
-                print(f"  ⚠ Error: {e}")
+                print(f"  [ADVERTENCIA] Error: {e}")
                 model = build_model(num_classes)
     else:
-        print("\n⚠ No se encontró modelo base. Construyendo nuevo modelo desde cero...")
+        print("\n[ADVERTENCIA] No se encontró modelo base. Construyendo nuevo modelo desde cero...")
         model = build_model(num_classes)
     
     # Dividir datos
@@ -278,18 +278,32 @@ def main():
     print("ENTRENAMIENTO DEL MODELO DE NÚMEROS (0-5)")
     print("="*60)
     
-    # Verificar que existen datos
+    # Crear directorio de datos y subdirectorios si no existen
     if not os.path.exists(DATA_DIR):
-        print(f"\n❌ ERROR: No se encuentra el directorio de datos: {DATA_DIR}")
-        print("   Ejecuta primero 'collect_number_data.py' para capturar imágenes.")
-        print("   O crea manualmente el directorio con subdirectorios: 0, 1, 2, 3, 4, 5")
+        print(f"\n[ADVERTENCIA] No se encuentra el directorio de datos: {DATA_DIR}")
+        print("   Creando directorio y subdirectorios necesarios...")
+        os.makedirs(DATA_DIR, exist_ok=True)
+        for class_name in CLASS_NAMES:
+            class_dir = os.path.join(DATA_DIR, class_name)
+            os.makedirs(class_dir, exist_ok=True)
+        print(f"   [OK] Directorio creado: {DATA_DIR}")
+        print(f"   [OK] Subdirectorios creados: {', '.join(CLASS_NAMES)}")
+        print("\n[ADVERTENCIA] Los directorios están vacíos. Necesitas agregar imágenes antes de entrenar.")
+        print("   Ejecuta 'collect_number_data.py' para capturar imágenes o agrega imágenes manualmente.")
+        print("\n[INFO] Los directorios han sido creados. Agrega imágenes y vuelve a ejecutar el script.")
         return
     
     # Cargar imágenes
     try:
         images, labels_categorical, labels = load_images_from_directory(DATA_DIR)
     except ValueError as e:
-        print(f"\n❌ ERROR: {e}")
+        print(f"\n[ERROR] {e}")
+        print("\n[INFO] Asegúrate de que existan imágenes en los subdirectorios:")
+        for class_name in CLASS_NAMES:
+            class_dir = os.path.join(DATA_DIR, class_name)
+            if os.path.exists(class_dir):
+                img_count = len([f for f in os.listdir(class_dir) if f.endswith('.png')])
+                print(f"   {class_dir}: {img_count} imágenes")
         return
     
     # Verificar que hay suficientes datos
@@ -302,7 +316,7 @@ def main():
                            if class_counts[i] < min_images_per_class]
     
     if insufficient_classes:
-        print(f"\n⚠ ADVERTENCIA: Algunas clases tienen menos de {min_images_per_class} imágenes:")
+        print(f"\n[ADVERTENCIA] Algunas clases tienen menos de {min_images_per_class} imágenes:")
         for class_name in insufficient_classes:
             class_idx = CLASS_NAMES.index(class_name)
             count = class_counts.get(class_idx, 0)
@@ -334,7 +348,7 @@ def main():
         model, history = train_model_from_scratch(images, labels_categorical)
     
     # Guardar modelo final
-    print(f"\n✓ Modelo guardado en: {os.path.abspath(MODEL_PATH)}")
+    print(f"\n[OK] Modelo guardado en: {os.path.abspath(MODEL_PATH)}")
     
     # Evaluar modelo
     print("\n" + "="*60)
@@ -352,7 +366,7 @@ def main():
     print(f"Precisión en validación: {val_acc:.4f} ({val_acc*100:.2f}%)")
     
     print("\n" + "="*60)
-    print("✓ ENTRENAMIENTO COMPLETADO")
+    print("[OK] ENTRENAMIENTO COMPLETADO")
     print("="*60)
     print(f"\nModelo guardado en: {MODEL_PATH}")
     print("\nEl modelo se cargará automáticamente en app.py cuando esté disponible.")

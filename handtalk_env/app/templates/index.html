@@ -154,7 +154,7 @@
                 <div class="detected-letter-display" id="detected-letter">-</div>
             </div>
             
-            <div class="progress" id="progress">Progreso: 0/24</div>
+            <div class="progress" id="progress">Progreso: 0/14</div>
             
             <div class="button-container">
                 <button id="next-btn" disabled>Siguiente Letra</button>
@@ -189,7 +189,7 @@
                 }
                 
                 // Actualizar progreso
-                $('#progress').text(`Progreso: ${data.progress || '0/24'}`);
+                $('#progress').text(`Progreso: ${data.progress || '0/14'}`);
                 
                 // Habilitar/deshabilitar botón siguiente
                 if (data.letter_detected && !isCompleted) {

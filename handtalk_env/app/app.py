@@ -33,8 +33,8 @@ for i in range(25):
 current_prediction = "Esperando gesto..."
 
 # Variables globales para el modo de práctica letra por letra
-# Obtener las letras disponibles del modelo (sin J, que es la clase 9)
-available_letters = [letter for letter in asl_letters]  # A-Y sin J
+# Solo letras de A a O (sin J)
+available_letters = ['A','B','C','D','E','F','G','H','I','K','L','M','N','O']  # A-O sin J
 current_letter_index = 0  # Índice de la letra objetivo actual
 letter_detected = False  # Si la letra objetivo fue detectada correctamente
 
@@ -43,7 +43,31 @@ available_numbers = ['0', '1', '2', '3', '4', '5']  # Números del 0 al 5
 current_number_index = 0  # Índice del número objetivo actual
 number_detected = False  # Si el número objetivo fue detectado correctamente
 current_number_prediction = "Esperando gesto..."  # Predicción actual para números
-mode = 'letters'  # Modo actual: 'letters' o 'numbers'
+
+# Variables globales para el modo de práctica mes por mes
+available_months = ['enero', 'febrero', 'marzo', 'abril']  # Solo enero a abril
+current_month_index = 0  # Índice del mes objetivo actual
+month_detected = False  # Si el mes objetivo fue detectado correctamente
+current_month_prediction = "Esperando gesto..."  # Predicción actual para meses
+month_model = None  # Modelo para meses
+month_sequence = []  # Buffer para almacenar secuencia de frames
+SEQUENCE_LENGTH = 30  # Longitud de secuencia para detección de meses
+is_recording_month = False  # Indicador de grabación de video
+
+# Variables globales para el modo de práctica día por día
+available_days = ['lunes', 'martes', 'miercoles', 'jueves']  # Solo lunes a jueves
+current_day_index = 0  # Índice del día objetivo actual
+day_detected = False  # Si el día objetivo fue detectado correctamente
+current_day_prediction = "Esperando gesto..."  # Predicción actual para días
+day_model = None  # Modelo para días
+day_sequence = []  # Buffer para almacenar secuencia de frames
+is_recording_day = False  # Indicador de grabación de video
+
+# Variables globales para el modo traductor
+translator_prediction = "Esperando detección..."  # Predicción actual para traductor
+translator_sequence = []  # Buffer para secuencias de video (meses/días)
+
+mode = 'letters'  # Modo actual: 'letters', 'numbers', 'months', 'days' o 'translator'
 
 try:
     import tensorflow as tf
@@ -268,6 +292,148 @@ elif not NUMBER_MODEL_PATH:
 else:
     print("⚠ No se pudo importar load_model para números")
 
+# Cargar modelo de meses (enero-diciembre)
+print(f"\n{'='*60}")
+print(f"BÚSQUEDA DEL MODELO DE MESES (ENERO-ABRIL)")
+print(f"{'='*60}")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+month_model_paths = [
+    os.path.join(script_dir, 'model', 'month_model_camera.h5'),  # Modelo reentrenado
+    os.path.join(script_dir, 'model', 'month_model.h5'),  # Modelo original
+    os.path.join(script_dir, 'month_model.h5'),
+    os.path.join(os.path.dirname(script_dir), 'model', 'month_model.h5'),
+    'model/month_model.h5',
+    'month_model.h5',
+    os.path.join(os.getcwd(), 'model', 'month_model.h5'),
+    os.path.join(os.getcwd(), 'month_model.h5'),
+]
+
+MONTH_MODEL_PATH = None
+for path in month_model_paths:
+    abs_path = os.path.abspath(path)
+    exists = os.path.exists(path)
+    if exists and MONTH_MODEL_PATH is None:
+        MONTH_MODEL_PATH = path
+        print(f"  ✓ Modelo de meses encontrado: {abs_path}")
+        break
+
+if MONTH_MODEL_PATH and load_model_func:
+    try:
+        print(f"Intentando cargar modelo de meses desde: {os.path.abspath(MONTH_MODEL_PATH)}")
+        try:
+            month_model = load_model_func(MONTH_MODEL_PATH)
+            print(f"✓✓✓ Modelo de meses cargado correctamente!")
+        except Exception as e1:
+            if "batch_shape" in str(e1) or "Unrecognized keyword" in str(e1):
+                print(f"⚠ Advertencia: Problema de compatibilidad. Reconstruyendo modelo...")
+                try:
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout, TimeDistributed, Conv2D, MaxPooling2D, Flatten
+                    
+                    num_classes = 4  # 4 meses (enero-abril)
+                    month_model = Sequential([
+                        TimeDistributed(
+                            Conv2D(32, kernel_size=(3,3), activation='relu'),
+                            input_shape=(SEQUENCE_LENGTH, 28, 28, 1)
+                        ),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Conv2D(64, (3,3), activation='relu')),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Flatten()),
+                        LSTM(128, return_sequences=True),
+                        Dropout(0.5),
+                        LSTM(64, return_sequences=False),
+                        Dropout(0.5),
+                        Dense(num_classes, activation='softmax')
+                    ])
+                    month_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                    month_model.load_weights(MONTH_MODEL_PATH, by_name=True, skip_mismatch=False)
+                    print(f"✓✓✓ Modelo de meses reconstruido y pesos cargados correctamente!")
+                except Exception as e2:
+                    print(f"✗✗✗ ERROR al reconstruir modelo de meses: {e2}")
+                    month_model = None
+            else:
+                raise e1
+    except Exception as e:
+        print(f"✗✗✗ ERROR al cargar modelo de meses: {e}")
+        month_model = None
+elif not MONTH_MODEL_PATH:
+    print(f"⚠ Modelo de meses NO encontrado. Usa 'train_month_model.py' para entrenarlo.")
+    print(f"  El modo de meses no funcionará hasta que se entrene el modelo.")
+else:
+    print("⚠ No se pudo importar load_model para meses")
+
+# Cargar modelo de días (lunes-jueves)
+print(f"\n{'='*60}")
+print(f"BÚSQUEDA DEL MODELO DE DÍAS (LUNES-JUEVES)")
+print(f"{'='*60}")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+day_model_paths = [
+    os.path.join(script_dir, 'model', 'day_model_camera.h5'),  # Modelo reentrenado
+    os.path.join(script_dir, 'model', 'day_model.h5'),  # Modelo original
+    os.path.join(script_dir, 'day_model.h5'),
+    os.path.join(os.path.dirname(script_dir), 'model', 'day_model.h5'),
+    'model/day_model.h5',
+    'day_model.h5',
+    os.path.join(os.getcwd(), 'model', 'day_model.h5'),
+    os.path.join(os.getcwd(), 'day_model.h5'),
+]
+
+DAY_MODEL_PATH = None
+for path in day_model_paths:
+    abs_path = os.path.abspath(path)
+    exists = os.path.exists(path)
+    if exists and DAY_MODEL_PATH is None:
+        DAY_MODEL_PATH = path
+        print(f"  ✓ Modelo de días encontrado: {abs_path}")
+        break
+
+if DAY_MODEL_PATH and load_model_func:
+    try:
+        print(f"Intentando cargar modelo de días desde: {os.path.abspath(DAY_MODEL_PATH)}")
+        try:
+            day_model = load_model_func(DAY_MODEL_PATH)
+            print(f"✓✓✓ Modelo de días cargado correctamente!")
+        except Exception as e1:
+            if "batch_shape" in str(e1) or "Unrecognized keyword" in str(e1):
+                print(f"⚠ Advertencia: Problema de compatibilidad. Reconstruyendo modelo...")
+                try:
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout, TimeDistributed, Conv2D, MaxPooling2D, Flatten
+                    
+                    num_classes = 4  # 4 días (lunes-jueves)
+                    day_model = Sequential([
+                        TimeDistributed(
+                            Conv2D(32, kernel_size=(3,3), activation='relu'),
+                            input_shape=(SEQUENCE_LENGTH, 28, 28, 1)
+                        ),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Conv2D(64, (3,3), activation='relu')),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Flatten()),
+                        LSTM(128, return_sequences=True),
+                        Dropout(0.5),
+                        LSTM(64, return_sequences=False),
+                        Dropout(0.5),
+                        Dense(num_classes, activation='softmax')
+                    ])
+                    day_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                    day_model.load_weights(DAY_MODEL_PATH, by_name=True, skip_mismatch=False)
+                    print(f"✓✓✓ Modelo de días reconstruido y pesos cargados correctamente!")
+                except Exception as e2:
+                    print(f"✗✗✗ ERROR al reconstruir modelo de días: {e2}")
+                    day_model = None
+            else:
+                raise e1
+    except Exception as e:
+        print(f"✗✗✗ ERROR al cargar modelo de días: {e}")
+        day_model = None
+elif not DAY_MODEL_PATH:
+    print(f"⚠ Modelo de días NO encontrado. Usa 'train_day_model.py' para entrenarlo.")
+    print(f"  El modo de días no funcionará hasta que se entrene el modelo.")
+else:
+    print("⚠ No se pudo importar load_model para días")
+
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
@@ -375,10 +541,17 @@ def detect_gesture(frame, landmarks):
         # - Si max_conf >= 0.50: umbral alto (0.40) - imágenes similares al dataset
         
         if confidence > confidence_threshold and class_idx < len(class_names):
-            return class_names[class_idx]
+            detected_letter = class_names[class_idx]
+            # Solo retornar si la letra está en available_letters (A-O)
+            if detected_letter in available_letters:
+                return detected_letter
+            else:
+                # Letra detectada pero no está en el rango permitido (A-O)
+                return None
         elif confidence > confidence_threshold and class_idx < 25:
             # Fallback para índices válidos pero fuera de class_names
-            return f"Clase_{class_idx}"
+            # No retornar nada si no está en available_letters
+            return None
         else:
             # No se detecta gesto: confianza muy baja incluso con umbral adaptativo
             # Esto indica que la imagen es muy diferente a las de entrenamiento
@@ -455,8 +628,250 @@ def detect_number(frame, landmarks):
         print(f"Error en detect_number: {e}")
         return None
 
+def detect_month(frame, landmarks):
+    """Detectar mes en señas usando secuencia de frames"""
+    global month_sequence, is_recording_month
+    
+    if month_model is None:
+        return None
+    
+    try:
+        # Extraer región de la mano
+        h, w, _ = frame.shape
+        
+        x_coords = [lm.x * w for lm in landmarks]
+        y_coords = [lm.y * h for lm in landmarks]
+        
+        center_x = (min(x_coords) + max(x_coords)) / 2
+        center_y = (min(y_coords) + max(y_coords)) / 2
+        width = max(x_coords) - min(x_coords)
+        height = max(y_coords) - min(y_coords)
+        
+        max_dim = max(width, height) * 1.5
+        
+        x_min = max(0, int(center_x - max_dim / 2))
+        y_min = max(0, int(center_y - max_dim / 2))
+        x_max = min(w, int(center_x + max_dim / 2))
+        y_max = min(h, int(center_y + max_dim / 2))
+        
+        if (x_max - x_min) < 50 or (y_max - y_min) < 50:
+            return None
+        
+        hand_img = frame[y_min:y_max, x_min:x_max]
+        if hand_img.size == 0:
+            return None
+        
+        # Preprocesar frame
+        hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
+        hand_img = cv2.resize(hand_img, (28, 28), interpolation=cv2.INTER_AREA)
+        hand_img = hand_img.astype('float32') / 255.0
+        
+        # Agregar frame a la secuencia
+        month_sequence.append(hand_img)
+        
+        # Mantener solo los últimos SEQUENCE_LENGTH frames
+        if len(month_sequence) > SEQUENCE_LENGTH:
+            month_sequence = month_sequence[-SEQUENCE_LENGTH:]
+        
+        # Si tenemos suficientes frames, hacer predicción
+        if len(month_sequence) >= SEQUENCE_LENGTH:
+            # Preparar secuencia para el modelo
+            sequence_array = np.array(month_sequence[-SEQUENCE_LENGTH:])
+            sequence_array = sequence_array.reshape(1, SEQUENCE_LENGTH, 28, 28, 1)
+            
+            # Predecir
+            prediction = month_model.predict(sequence_array, verbose=0)
+            class_idx = np.argmax(prediction)
+            confidence = float(prediction[0][class_idx])
+            
+            # Umbral adaptativo
+            max_confidence = prediction[0].max()
+            if max_confidence < 0.30:
+                confidence_threshold = 0.15
+            elif max_confidence < 0.50:
+                confidence_threshold = 0.25
+            else:
+                confidence_threshold = 0.40
+            
+            if confidence > confidence_threshold and class_idx < len(available_months):
+                return available_months[class_idx]
+        
+        return None
+    except Exception as e:
+        print(f"Error en detect_month: {e}")
+        return None
+
+def detect_day(frame, landmarks):
+    """Detectar día en señas usando secuencia de frames"""
+    global day_sequence, is_recording_day
+    
+    if day_model is None:
+        return None
+    
+    try:
+        # Extraer región de la mano
+        h, w, _ = frame.shape
+        
+        x_coords = [lm.x * w for lm in landmarks]
+        y_coords = [lm.y * h for lm in landmarks]
+        
+        center_x = (min(x_coords) + max(x_coords)) / 2
+        center_y = (min(y_coords) + max(y_coords)) / 2
+        width = max(x_coords) - min(x_coords)
+        height = max(y_coords) - min(y_coords)
+        
+        max_dim = max(width, height) * 1.5
+        
+        x_min = max(0, int(center_x - max_dim / 2))
+        y_min = max(0, int(center_y - max_dim / 2))
+        x_max = min(w, int(center_x + max_dim / 2))
+        y_max = min(h, int(center_y + max_dim / 2))
+        
+        if (x_max - x_min) < 50 or (y_max - y_min) < 50:
+            return None
+        
+        hand_img = frame[y_min:y_max, x_min:x_max]
+        if hand_img.size == 0:
+            return None
+        
+        # Preprocesar frame
+        hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
+        hand_img = cv2.resize(hand_img, (28, 28), interpolation=cv2.INTER_AREA)
+        hand_img = hand_img.astype('float32') / 255.0
+        
+        # Agregar frame a la secuencia
+        day_sequence.append(hand_img)
+        
+        # Mantener solo los últimos SEQUENCE_LENGTH frames
+        if len(day_sequence) > SEQUENCE_LENGTH:
+            day_sequence = day_sequence[-SEQUENCE_LENGTH:]
+        
+        # Si tenemos suficientes frames, hacer predicción
+        if len(day_sequence) >= SEQUENCE_LENGTH:
+            # Preparar secuencia para el modelo
+            sequence_array = np.array(day_sequence[-SEQUENCE_LENGTH:])
+            sequence_array = sequence_array.reshape(1, SEQUENCE_LENGTH, 28, 28, 1)
+            
+            # Predecir
+            prediction = day_model.predict(sequence_array, verbose=0)
+            class_idx = np.argmax(prediction)
+            confidence = float(prediction[0][class_idx])
+            
+            # Umbral adaptativo
+            max_confidence = prediction[0].max()
+            if max_confidence < 0.30:
+                confidence_threshold = 0.15
+            elif max_confidence < 0.50:
+                confidence_threshold = 0.25
+            else:
+                confidence_threshold = 0.40
+            
+            if confidence > confidence_threshold and class_idx < len(available_days):
+                return available_days[class_idx]
+        
+        return None
+    except Exception as e:
+        print(f"Error en detect_day: {e}")
+        return None
+
+def detect_all_gestures(frame, landmarks):
+    """Detectar gesto usando todos los modelos disponibles"""
+    global translator_sequence
+    
+    results = []
+    
+    # 1. Intentar detectar letra
+    if model is not None:
+        gesture = detect_gesture(frame, landmarks)
+        if gesture:
+            results.append(('Letra', gesture))
+    
+    # 2. Intentar detectar número
+    if number_model is not None:
+        number = detect_number(frame, landmarks)
+        if number:
+            results.append(('Número', number))
+    
+    # 3. Intentar detectar mes (requiere secuencia)
+    if month_model is not None:
+        # Agregar frame a secuencia de meses
+        h, w, _ = frame.shape
+        x_coords = [lm.x * w for lm in landmarks]
+        y_coords = [lm.y * h for lm in landmarks]
+        center_x = (min(x_coords) + max(x_coords)) / 2
+        center_y = (min(y_coords) + max(y_coords)) / 2
+        width = max(x_coords) - min(x_coords)
+        height = max(y_coords) - min(y_coords)
+        max_dim = max(width, height) * 1.5
+        x_min = max(0, int(center_x - max_dim / 2))
+        y_min = max(0, int(center_y - max_dim / 2))
+        x_max = min(w, int(center_x + max_dim / 2))
+        y_max = min(h, int(center_y + max_dim / 2))
+        
+        if (x_max - x_min) >= 50 and (y_max - y_min) >= 50:
+            hand_img = frame[y_min:y_max, x_min:x_max]
+            if hand_img.size > 0:
+                hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
+                hand_img = cv2.resize(hand_img, (28, 28), interpolation=cv2.INTER_AREA)
+                hand_img = hand_img.astype('float32') / 255.0
+                translator_sequence.append(hand_img)
+                
+                if len(translator_sequence) > SEQUENCE_LENGTH:
+                    translator_sequence = translator_sequence[-SEQUENCE_LENGTH:]
+                
+                if len(translator_sequence) >= SEQUENCE_LENGTH:
+                    try:
+                        sequence_array = np.array(translator_sequence[-SEQUENCE_LENGTH:])
+                        sequence_array = sequence_array.reshape(1, SEQUENCE_LENGTH, 28, 28, 1)
+                        prediction = month_model.predict(sequence_array, verbose=0)
+                        class_idx = np.argmax(prediction)
+                        confidence = float(prediction[0][class_idx])
+                        max_confidence = prediction[0].max()
+                        
+                        confidence_threshold = 0.15 if max_confidence < 0.30 else (0.25 if max_confidence < 0.50 else 0.40)
+                        
+                        if confidence > confidence_threshold and class_idx < len(available_months):
+                            results.append(('Mes', available_months[class_idx]))
+                    except:
+                        pass
+    
+    # 4. Intentar detectar día (requiere secuencia)
+    if day_model is not None:
+        # Reutilizar la misma secuencia o crear una nueva
+        if len(translator_sequence) >= SEQUENCE_LENGTH:
+            try:
+                sequence_array = np.array(translator_sequence[-SEQUENCE_LENGTH:])
+                sequence_array = sequence_array.reshape(1, SEQUENCE_LENGTH, 28, 28, 1)
+                prediction = day_model.predict(sequence_array, verbose=0)
+                class_idx = np.argmax(prediction)
+                confidence = float(prediction[0][class_idx])
+                max_confidence = prediction[0].max()
+                
+                confidence_threshold = 0.15 if max_confidence < 0.30 else (0.25 if max_confidence < 0.50 else 0.40)
+                
+                if confidence > confidence_threshold and class_idx < len(available_days):
+                    results.append(('Día', available_days[class_idx]))
+            except:
+                pass
+    
+    # Retornar el resultado con mayor prioridad (letras primero, luego números, luego meses/días)
+    if results:
+        # Prioridad: Letra > Número > Mes > Día
+        priority_order = ['Letra', 'Número', 'Mes', 'Día']
+        for priority in priority_order:
+            for result_type, result_value in results:
+                if result_type == priority:
+                    return f"{result_type}: {result_value}"
+        # Si no hay coincidencia de prioridad, retornar el primero
+        return f"{results[0][0]}: {results[0][1]}"
+    
+    return None
+
 def generate_frames():
-    global current_prediction, letter_detected, current_number_prediction, number_detected, mode
+    global current_prediction, letter_detected, current_number_prediction, number_detected
+    global current_month_prediction, month_detected, month_sequence, is_recording_month
+    global current_day_prediction, day_detected, day_sequence, is_recording_day
+    global translator_prediction, translator_sequence, mode
     print("🎥 Iniciando captura de video...")
     cap = None
     frame_count = 0
@@ -526,8 +941,82 @@ def generate_frames():
                 landmarks = hand_landmarks.landmark
                 debug_landmarks = landmarks  # Guardar para debug
                 
-                if mode == 'numbers':
+                # PAUSAR DETECCIÓN: Si ya se detectó correctamente, no procesar más gestos
+                if mode == 'translator':
+                    # Modo traductor: detectar con todos los modelos
+                    detected = detect_all_gestures(frame, landmarks)
+                    if detected:
+                        translator_prediction = detected
+                    else:
+                        translator_prediction = "Mano detectada, procesando..."
+                elif mode == 'days':
+                    # Modo de días
+                    if day_detected:
+                        # Ya se detectó correctamente, mantener el mensaje y no procesar más
+                        if current_day_index < len(available_days):
+                            target_day = available_days[current_day_index]
+                            current_day_prediction = f"Día: {target_day} ✓"
+                        is_recording_day = False
+                        continue  # Saltar el procesamiento de detección
+                    
+                    # Procesar detección solo si aún no se ha detectado correctamente
+                    is_recording_day = True
+                    detected = detect_day(frame, landmarks)
+                    if detected:
+                        current_day_prediction = f"Día: {detected}"
+                        # Verificar si el día detectado coincide con el día objetivo
+                        if current_day_index < len(available_days):
+                            target_day = available_days[current_day_index]
+                            if detected == target_day:
+                                day_detected = True
+                                current_day_prediction = f"Día: {detected} ✓"
+                                is_recording_day = False
+                                if frame_count % 30 == 0:
+                                    print(f"✓✓✓ Día CORRECTO detectado: {detected} (objetivo: {target_day}) - Detección pausada")
+                            else:
+                                if frame_count % 30 == 0:
+                                    print(f"✗ Día detectado: {detected} (objetivo: {target_day}) - No coincide")
+                    else:
+                        current_day_prediction = "Grabando video..."
+                elif mode == 'months':
+                    # Modo de meses
+                    if month_detected:
+                        # Ya se detectó correctamente, mantener el mensaje y no procesar más
+                        if current_month_index < len(available_months):
+                            target_month = available_months[current_month_index]
+                            current_month_prediction = f"Mes: {target_month} ✓"
+                        is_recording_month = False
+                        continue  # Saltar el procesamiento de detección
+                    
+                    # Procesar detección solo si aún no se ha detectado correctamente
+                    is_recording_month = True
+                    detected = detect_month(frame, landmarks)
+                    if detected:
+                        current_month_prediction = f"Mes: {detected}"
+                        # Verificar si el mes detectado coincide con el mes objetivo
+                        if current_month_index < len(available_months):
+                            target_month = available_months[current_month_index]
+                            if detected == target_month:
+                                month_detected = True
+                                current_month_prediction = f"Mes: {detected} ✓"
+                                is_recording_month = False
+                                if frame_count % 30 == 0:
+                                    print(f"✓✓✓ Mes CORRECTO detectado: {detected} (objetivo: {target_month}) - Detección pausada")
+                            else:
+                                if frame_count % 30 == 0:
+                                    print(f"✗ Mes detectado: {detected} (objetivo: {target_month}) - No coincide")
+                    else:
+                        current_month_prediction = "Grabando video..."
+                elif mode == 'numbers':
                     # Modo de números
+                    if number_detected:
+                        # Ya se detectó correctamente, mantener el mensaje y no procesar más
+                        if current_number_index < len(available_numbers):
+                            target_number = available_numbers[current_number_index]
+                            current_number_prediction = f"Número: {target_number} ✓"
+                        continue  # Saltar el procesamiento de detección
+                    
+                    # Procesar detección solo si aún no se ha detectado correctamente
                     detected = detect_number(frame, landmarks)
                     if detected:
                         current_number_prediction = f"Número: {detected}"
@@ -536,19 +1025,24 @@ def generate_frames():
                             target_number = available_numbers[current_number_index]
                             if detected == target_number:
                                 number_detected = True
+                                current_number_prediction = f"Número: {detected} ✓"
                                 if frame_count % 30 == 0:
-                                    print(f"✓✓✓ Número CORRECTO detectado: {detected} (objetivo: {target_number})")
+                                    print(f"✓✓✓ Número CORRECTO detectado: {detected} (objetivo: {target_number}) - Detección pausada")
                             else:
-                                if not number_detected:
-                                    number_detected = False
                                 if frame_count % 30 == 0:
                                     print(f"✗ Número detectado: {detected} (objetivo: {target_number}) - No coincide")
                     else:
                         current_number_prediction = "Mano detectada, procesando..."
-                        if not number_detected:
-                            number_detected = False
                 else:
                     # Modo de letras (por defecto)
+                    if letter_detected:
+                        # Ya se detectó correctamente, mantener el mensaje y no procesar más
+                        if current_letter_index < len(available_letters):
+                            target_letter = available_letters[current_letter_index]
+                            current_prediction = f"Letra: {target_letter} ✓"
+                        continue  # Saltar el procesamiento de detección
+                    
+                    # Procesar detección solo si aún no se ha detectado correctamente
                     gesture = detect_gesture(frame, landmarks)
                     if gesture:
                         current_prediction = f"Letra: {gesture}"
@@ -557,34 +1051,37 @@ def generate_frames():
                             target_letter = available_letters[current_letter_index]
                             if gesture == target_letter:
                                 letter_detected = True
+                                current_prediction = f"Letra: {gesture} ✓"
                                 # Log para debug cada 30 frames
                                 if frame_count % 30 == 0:
-                                    print(f"✓✓✓ Letra CORRECTA detectada: {gesture} (objetivo: {target_letter}) - Botón debería habilitarse")
+                                    print(f"✓✓✓ Letra CORRECTA detectada: {gesture} (objetivo: {target_letter}) - Detección pausada")
                             else:
-                                # Solo resetear si NO es la letra correcta
-                                # Mantener el estado si ya se detectó correctamente antes
-                                if not letter_detected:
-                                    letter_detected = False
                                 # Log para debug
                                 if frame_count % 30 == 0:
                                     print(f"✗ Letra detectada: {gesture} (objetivo: {target_letter}) - No coincide")
                     else:
                         current_prediction = "Mano detectada, procesando..."
-                        # No resetear letter_detected aquí si ya se detectó correctamente
-                        # Solo resetear si no hay gesto detectado Y no se había detectado antes
-                        if not letter_detected:
-                            letter_detected = False
         else:
-            if mode == 'numbers':
-                current_number_prediction = "Esperando mano..."
+            # No hay mano detectada
+            if mode == 'translator':
+                translator_prediction = "Esperando mano..."
+                translator_sequence = []  # Limpiar secuencia si no hay mano
+            elif mode == 'days':
+                if not day_detected:
+                    current_day_prediction = "Esperando mano..."
+                    is_recording_day = False
+                    day_sequence = []  # Limpiar secuencia si no hay mano
+            elif mode == 'months':
+                if not month_detected:
+                    current_month_prediction = "Esperando mano..."
+                    is_recording_month = False
+                    month_sequence = []  # Limpiar secuencia si no hay mano
+            elif mode == 'numbers':
                 if not number_detected:
-                    number_detected = False
+                    current_number_prediction = "Esperando mano..."
             else:
-                current_prediction = "Esperando mano..."
-                # No resetear letter_detected aquí si ya se detectó correctamente
-                # Solo resetear si no hay mano Y no se había detectado antes
                 if not letter_detected:
-                    letter_detected = False
+                    current_prediction = "Esperando mano..."
         
         # Log cada 30 frames (aproximadamente cada segundo a 30fps)
         frame_count += 1
@@ -653,6 +1150,28 @@ def numeros():
     mode = 'numbers'  # Establecer modo de números
     return render_template('numeros.html')
 
+@app.route('/meses')
+def meses():
+    global mode, month_sequence
+    mode = 'months'  # Establecer modo de meses
+    month_sequence = []  # Limpiar secuencia al cambiar de modo
+    return render_template('meses.html')
+
+@app.route('/dias')
+def dias():
+    global mode, day_sequence
+    mode = 'days'  # Establecer modo de días
+    day_sequence = []  # Limpiar secuencia al cambiar de modo
+    return render_template('dias.html')
+
+@app.route('/traductor')
+def traductor():
+    global mode, translator_sequence, translator_prediction
+    mode = 'translator'  # Establecer modo traductor
+    translator_sequence = []  # Limpiar secuencia al cambiar de modo
+    translator_prediction = "Esperando detección..."  # Resetear predicción
+    return render_template('traductor.html')
+
 @app.route('/video_feed')
 def video_feed():
     return Response(
@@ -705,11 +1224,12 @@ def get_prediction():
 
 @app.route('/next_letter', methods=['POST'])
 def next_letter():
-    global current_letter_index, letter_detected
+    global current_letter_index, letter_detected, current_prediction
     print(f"→ Botón 'Siguiente Letra' presionado. Índice actual: {current_letter_index}")
     if current_letter_index < len(available_letters) - 1:
         current_letter_index += 1
         letter_detected = False
+        current_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
         print(f"→ Avanzando a la letra: {available_letters[current_letter_index]} ({current_letter_index + 1}/{len(available_letters)})")
         return jsonify({
             "success": True,
@@ -728,9 +1248,10 @@ def next_letter():
 
 @app.route('/reset_practice', methods=['POST'])
 def reset_practice():
-    global current_letter_index, letter_detected
+    global current_letter_index, letter_detected, current_prediction
     current_letter_index = 0
     letter_detected = False
+    current_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
     return jsonify({
         "success": True,
         "current_index": current_letter_index,
@@ -776,11 +1297,12 @@ def get_number_prediction():
 
 @app.route('/next_number', methods=['POST'])
 def next_number():
-    global current_number_index, number_detected
+    global current_number_index, number_detected, current_number_prediction
     print(f"→ Botón 'Siguiente Número' presionado. Índice actual: {current_number_index}")
     if current_number_index < len(available_numbers) - 1:
         current_number_index += 1
         number_detected = False
+        current_number_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
         print(f"→ Avanzando al número: {available_numbers[current_number_index]} ({current_number_index + 1}/{len(available_numbers)})")
         return jsonify({
             "success": True,
@@ -799,14 +1321,174 @@ def next_number():
 
 @app.route('/reset_number_practice', methods=['POST'])
 def reset_number_practice():
-    global current_number_index, number_detected
+    global current_number_index, number_detected, current_number_prediction
     current_number_index = 0
     number_detected = False
+    current_number_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
     return jsonify({
         "success": True,
         "current_index": current_number_index,
         "target_number": available_numbers[current_number_index],
         "progress": f"{current_number_index + 1}/{len(available_numbers)}"
+    })
+
+# Rutas para meses
+@app.route('/get_month_prediction')
+def get_month_prediction():
+    global month_detected, is_recording_month
+    
+    # Extraer solo el mes si viene en formato "Mes: X"
+    detected_month = None
+    if current_month_prediction.startswith("Mes: "):
+        detected_month = current_month_prediction.split(": ")[1].replace(" ✓", "")
+    
+    # Obtener el mes objetivo actual
+    target_month = None
+    if current_month_index < len(available_months):
+        target_month = available_months[current_month_index]
+    
+    # Verificar nuevamente la comparación aquí para asegurar que sea correcta
+    if detected_month and target_month:
+        if detected_month == target_month:
+            month_detected = True
+    
+    return jsonify({
+        "prediction": current_month_prediction,
+        "detected_month": detected_month,
+        "target_month": target_month,
+        "month_detected": month_detected,
+        "current_index": current_month_index,
+        "total_months": len(available_months),
+        "progress": f"{current_month_index + 1}/{len(available_months)}",
+        "recording": is_recording_month,
+        "debug": {
+            "detected": detected_month,
+            "target": target_month,
+            "match": detected_month == target_month if detected_month and target_month else False,
+            "month_detected_state": month_detected
+        }
+    })
+
+@app.route('/next_month', methods=['POST'])
+def next_month():
+    global current_month_index, month_detected, current_month_prediction, month_sequence
+    print(f"→ Botón 'Siguiente Mes' presionado. Índice actual: {current_month_index}")
+    if current_month_index < len(available_months) - 1:
+        current_month_index += 1
+        month_detected = False
+        current_month_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
+        month_sequence = []  # Limpiar secuencia
+        print(f"→ Avanzando al mes: {available_months[current_month_index]} ({current_month_index + 1}/{len(available_months)})")
+        return jsonify({
+            "success": True,
+            "current_index": current_month_index,
+            "target_month": available_months[current_month_index],
+            "progress": f"{current_month_index + 1}/{len(available_months)}"
+        })
+    else:
+        # Ya se completaron todos los meses
+        print("→ ¡Todos los meses completados!")
+        return jsonify({
+            "success": True,
+            "completed": True,
+            "message": "¡Felicidades! Has completado todos los meses (enero-abril)."
+        })
+
+@app.route('/reset_month_practice', methods=['POST'])
+def reset_month_practice():
+    global current_month_index, month_detected, current_month_prediction, month_sequence
+    current_month_index = 0
+    month_detected = False
+    current_month_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
+    month_sequence = []  # Limpiar secuencia
+    return jsonify({
+        "success": True,
+        "current_index": current_month_index,
+        "target_month": available_months[current_month_index],
+        "progress": f"{current_month_index + 1}/{len(available_months)}"
+    })
+
+# Rutas para días
+@app.route('/get_day_prediction')
+def get_day_prediction():
+    global day_detected, is_recording_day
+    
+    # Extraer solo el día si viene en formato "Día: X"
+    detected_day = None
+    if current_day_prediction.startswith("Día: "):
+        detected_day = current_day_prediction.split(": ")[1].replace(" ✓", "")
+    
+    # Obtener el día objetivo actual
+    target_day = None
+    if current_day_index < len(available_days):
+        target_day = available_days[current_day_index]
+    
+    # Verificar nuevamente la comparación aquí para asegurar que sea correcta
+    if detected_day and target_day:
+        if detected_day == target_day:
+            day_detected = True
+    
+    return jsonify({
+        "prediction": current_day_prediction,
+        "detected_day": detected_day,
+        "target_day": target_day,
+        "day_detected": day_detected,
+        "current_index": current_day_index,
+        "total_days": len(available_days),
+        "progress": f"{current_day_index + 1}/{len(available_days)}",
+        "recording": is_recording_day,
+        "debug": {
+            "detected": detected_day,
+            "target": target_day,
+            "match": detected_day == target_day if detected_day and target_day else False,
+            "day_detected_state": day_detected
+        }
+    })
+
+@app.route('/next_day', methods=['POST'])
+def next_day():
+    global current_day_index, day_detected, current_day_prediction, day_sequence
+    print(f"→ Botón 'Siguiente Día' presionado. Índice actual: {current_day_index}")
+    if current_day_index < len(available_days) - 1:
+        current_day_index += 1
+        day_detected = False
+        current_day_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
+        day_sequence = []  # Limpiar secuencia
+        print(f"→ Avanzando al día: {available_days[current_day_index]} ({current_day_index + 1}/{len(available_days)})")
+        return jsonify({
+            "success": True,
+            "current_index": current_day_index,
+            "target_day": available_days[current_day_index],
+            "progress": f"{current_day_index + 1}/{len(available_days)}"
+        })
+    else:
+        # Ya se completaron todos los días
+        print("→ ¡Todos los días completados!")
+        return jsonify({
+            "success": True,
+            "completed": True,
+            "message": "¡Felicidades! Has completado todos los días (lunes-jueves)."
+        })
+
+@app.route('/reset_day_practice', methods=['POST'])
+def reset_day_practice():
+    global current_day_index, day_detected, current_day_prediction, day_sequence
+    current_day_index = 0
+    day_detected = False
+    current_day_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
+    day_sequence = []  # Limpiar secuencia
+    return jsonify({
+        "success": True,
+        "current_index": current_day_index,
+        "target_day": available_days[current_day_index],
+        "progress": f"{current_day_index + 1}/{len(available_days)}"
+    })
+
+# Ruta para traductor
+@app.route('/get_translator_prediction')
+def get_translator_prediction():
+    return jsonify({
+        "prediction": translator_prediction
     })
 
 @app.route('/translate', methods=['POST'])
