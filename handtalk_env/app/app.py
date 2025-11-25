@@ -67,7 +67,16 @@ is_recording_day = False  # Indicador de grabación de video
 translator_prediction = "Esperando detección..."  # Predicción actual para traductor
 translator_sequence = []  # Buffer para secuencias de video (meses/días)
 
-mode = 'letters'  # Modo actual: 'letters', 'numbers', 'months', 'days' o 'translator'
+# Variables globales para el modo de práctica palabra por palabra
+available_words = ['hola', 'adios', 'gracias', 'si']
+current_word_index = 0  # Índice de la palabra objetivo actual
+word_detected = False  # Si la palabra objetivo fue detectada correctamente
+current_word_prediction = "Esperando gesto..."  # Predicción actual para palabras
+word_model = None  # Modelo para palabras
+word_sequence = []  # Buffer para almacenar secuencia de frames
+is_recording_word = False  # Indicador de grabación de video
+
+mode = 'letters'  # Modo actual: 'letters', 'numbers', 'months', 'days', 'words' o 'translator'
 
 try:
     import tensorflow as tf
@@ -434,8 +443,80 @@ elif not DAY_MODEL_PATH:
 else:
     print("⚠ No se pudo importar load_model para días")
 
+# Cargar modelo de palabras y expresiones
+print(f"\n{'='*60}")
+print(f"BÚSQUEDA DEL MODELO DE PALABRAS Y EXPRESIONES")
+print(f"{'='*60}")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+word_model_paths = [
+    os.path.join(script_dir, 'model', 'word_model_camera.h5'),  # Modelo reentrenado
+    os.path.join(script_dir, 'model', 'word_model.h5'),  # Modelo original
+    os.path.join(script_dir, 'word_model.h5'),
+    os.path.join(os.path.dirname(script_dir), 'model', 'word_model.h5'),
+    'model/word_model.h5',
+    'word_model.h5',
+    os.path.join(os.getcwd(), 'model', 'word_model.h5'),
+    os.path.join(os.getcwd(), 'word_model.h5'),
+]
+
+WORD_MODEL_PATH = None
+for path in word_model_paths:
+    abs_path = os.path.abspath(path)
+    exists = os.path.exists(path)
+    if exists and WORD_MODEL_PATH is None:
+        WORD_MODEL_PATH = path
+        print(f"  ✓ Modelo de palabras encontrado: {abs_path}")
+        break
+
+if WORD_MODEL_PATH and load_model_func:
+    try:
+        print(f"Intentando cargar modelo de palabras desde: {os.path.abspath(WORD_MODEL_PATH)}")
+        try:
+            word_model = load_model_func(WORD_MODEL_PATH)
+            print(f"✓✓✓ Modelo de palabras cargado correctamente!")
+        except Exception as e1:
+            if "batch_shape" in str(e1) or "Unrecognized keyword" in str(e1):
+                print(f"⚠ Advertencia: Problema de compatibilidad. Reconstruyendo modelo...")
+                try:
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout, TimeDistributed, Conv2D, MaxPooling2D, Flatten
+                    
+                    num_classes = len(available_words)
+                    word_model = Sequential([
+                        TimeDistributed(
+                            Conv2D(32, kernel_size=(3,3), activation='relu'),
+                            input_shape=(SEQUENCE_LENGTH, 28, 28, 1)
+                        ),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Conv2D(64, (3,3), activation='relu')),
+                        TimeDistributed(MaxPooling2D((2,2))),
+                        TimeDistributed(Flatten()),
+                        LSTM(128, return_sequences=True),
+                        Dropout(0.5),
+                        LSTM(64, return_sequences=False),
+                        Dropout(0.5),
+                        Dense(num_classes, activation='softmax')
+                    ])
+                    word_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                    word_model.load_weights(WORD_MODEL_PATH, by_name=True, skip_mismatch=False)
+                    print(f"✓✓✓ Modelo de palabras reconstruido y pesos cargados correctamente!")
+                except Exception as e2:
+                    print(f"✗✗✗ ERROR al reconstruir modelo de palabras: {e2}")
+                    word_model = None
+            else:
+                raise e1
+    except Exception as e:
+        print(f"✗✗✗ ERROR al cargar modelo de palabras: {e}")
+        word_model = None
+elif not WORD_MODEL_PATH:
+    print(f"⚠ Modelo de palabras NO encontrado. Usa 'train_word_model.py' para entrenarlo.")
+    print(f"  El modo de palabras no funcionará hasta que se entrene el modelo.")
+else:
+    print("⚠ No se pudo importar load_model para palabras")
+
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+# Configurar para detectar hasta 2 manos (necesario para palabras/expresiones)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
 
 def detect_gesture(frame, landmarks):
@@ -774,8 +855,123 @@ def detect_day(frame, landmarks):
         print(f"Error en detect_day: {e}")
         return None
 
-def detect_all_gestures(frame, landmarks):
-    """Detectar gesto usando todos los modelos disponibles"""
+def detect_word(frame, all_hand_landmarks, sequence_buffer=None):
+    """Detectar palabra/expresión en señas usando secuencia de frames (1 o 2 manos)
+    
+    Args:
+        frame: Frame de video
+        all_hand_landmarks: Lista de landmarks de todas las manos detectadas
+        sequence_buffer: Buffer de secuencia a usar (opcional, por defecto usa word_sequence)
+    """
+    global word_sequence, is_recording_word
+    
+    if word_model is None:
+        return None
+    
+    # Verificar que se detecte al menos una mano
+    if len(all_hand_landmarks) < 1:
+        return None
+    
+    # Usar el buffer proporcionado o el global
+    if sequence_buffer is None:
+        sequence_buffer = word_sequence
+    
+    try:
+        # Extraer región que incluye la(s) mano(s)
+        h, w, _ = frame.shape
+        
+        # Combinar todos los landmarks de todas las manos
+        all_x_coords = []
+        all_y_coords = []
+        
+        for landmarks in all_hand_landmarks:
+            x_coords = [lm.x * w for lm in landmarks]
+            y_coords = [lm.y * h for lm in landmarks]
+            all_x_coords.extend(x_coords)
+            all_y_coords.extend(y_coords)
+        
+        if len(all_x_coords) == 0:
+            return None
+        
+        # Calcular bounding box que incluye la(s) mano(s)
+        min_x = min(all_x_coords)
+        max_x = max(all_x_coords)
+        min_y = min(all_y_coords)
+        max_y = max(all_y_coords)
+        
+        # Calcular centro y dimensiones
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        width = max_x - min_x
+        height = max_y - min_y
+        
+        # Aumentar el tamaño del bounding box (60% más grande)
+        max_dim = max(width, height) * 1.6
+        
+        x_min = max(0, int(center_x - max_dim / 2))
+        y_min = max(0, int(center_y - max_dim / 2))
+        x_max = min(w, int(center_x + max_dim / 2))
+        y_max = min(h, int(center_y + max_dim / 2))
+        
+        # Verificar tamaño mínimo
+        if (x_max - x_min) < 80 or (y_max - y_min) < 80:
+            return None
+        
+        # Recortar región que incluye la(s) mano(s)
+        hands_img = frame[y_min:y_max, x_min:x_max]
+        if hands_img.size == 0:
+            return None
+        
+        # Preprocesar frame
+        hands_img = cv2.cvtColor(hands_img, cv2.COLOR_BGR2GRAY)
+        hands_img = cv2.resize(hands_img, (28, 28), interpolation=cv2.INTER_AREA)
+        hands_img = hands_img.astype('float32') / 255.0
+        
+        # Agregar frame a la secuencia (usar el buffer proporcionado o el global)
+        if sequence_buffer is None or sequence_buffer is word_sequence:
+            # Modificar la secuencia global para modo palabras
+            word_sequence.append(hands_img)
+            if len(word_sequence) > SEQUENCE_LENGTH:
+                word_sequence[:] = word_sequence[-SEQUENCE_LENGTH:]
+            current_sequence = word_sequence
+        else:
+            # Usar el buffer proporcionado (para traductor)
+            sequence_buffer.append(hands_img)
+            if len(sequence_buffer) > SEQUENCE_LENGTH:
+                # Modificar la lista en su lugar
+                del sequence_buffer[:-SEQUENCE_LENGTH]
+            current_sequence = sequence_buffer
+        
+        # Si tenemos suficientes frames, hacer predicción
+        if len(current_sequence) >= SEQUENCE_LENGTH:
+            # Preparar secuencia para el modelo
+            sequence_array = np.array(current_sequence[-SEQUENCE_LENGTH:])
+            sequence_array = sequence_array.reshape(1, SEQUENCE_LENGTH, 28, 28, 1)
+            
+            # Predecir
+            prediction = word_model.predict(sequence_array, verbose=0)
+            class_idx = np.argmax(prediction)
+            confidence = float(prediction[0][class_idx])
+            
+            # Umbral adaptativo
+            max_confidence = prediction[0].max()
+            if max_confidence < 0.30:
+                confidence_threshold = 0.15
+            elif max_confidence < 0.50:
+                confidence_threshold = 0.25
+            else:
+                confidence_threshold = 0.40
+            
+            if confidence > confidence_threshold and class_idx < len(available_words):
+                return available_words[class_idx]
+        
+        return None
+    except Exception as e:
+        print(f"Error en detect_word: {e}")
+        return None
+
+def detect_all_gestures(frame, landmarks, all_hand_landmarks=None):
+    """Detectar gesto usando todos los modelos disponibles (letras, números, meses, días, palabras)"""
     global translator_sequence
     
     results = []
@@ -792,7 +988,19 @@ def detect_all_gestures(frame, landmarks):
         if number:
             results.append(('Número', number))
     
-    # 3. Intentar detectar mes (requiere secuencia)
+    # 3. Intentar detectar palabra/expresión (requiere secuencia, puede usar 1 o 2 manos)
+    if word_model is not None and all_hand_landmarks is not None and len(all_hand_landmarks) >= 1:
+        try:
+            # Usar detect_word que maneja la secuencia internamente
+            # Pasar translator_sequence para que use la secuencia compartida del traductor
+            word = detect_word(frame, all_hand_landmarks, translator_sequence)
+            if word:
+                results.append(('Palabra', word))
+        except Exception as e:
+            # Si falla la detección de palabras, continuar con otros modelos
+            pass
+    
+    # 4. Intentar detectar mes (requiere secuencia)
     if month_model is not None:
         # Agregar frame a secuencia de meses
         h, w, _ = frame.shape
@@ -835,7 +1043,7 @@ def detect_all_gestures(frame, landmarks):
                     except:
                         pass
     
-    # 4. Intentar detectar día (requiere secuencia)
+    # 5. Intentar detectar día (requiere secuencia)
     if day_model is not None:
         # Reutilizar la misma secuencia o crear una nueva
         if len(translator_sequence) >= SEQUENCE_LENGTH:
@@ -854,10 +1062,10 @@ def detect_all_gestures(frame, landmarks):
             except:
                 pass
     
-    # Retornar el resultado con mayor prioridad (letras primero, luego números, luego meses/días)
+    # Retornar el resultado con mayor prioridad
     if results:
-        # Prioridad: Letra > Número > Mes > Día
-        priority_order = ['Letra', 'Número', 'Mes', 'Día']
+        # Prioridad: Letra > Número > Palabra > Mes > Día
+        priority_order = ['Letra', 'Número', 'Palabra', 'Mes', 'Día']
         for priority in priority_order:
             for result_type, result_value in results:
                 if result_type == priority:
@@ -871,6 +1079,7 @@ def generate_frames():
     global current_prediction, letter_detected, current_number_prediction, number_detected
     global current_month_prediction, month_detected, month_sequence, is_recording_month
     global current_day_prediction, day_detected, day_sequence, is_recording_day
+    global current_word_prediction, word_detected, word_sequence, is_recording_word, mode
     global translator_prediction, translator_sequence, mode
     print("🎥 Iniciando captura de video...")
     cap = None
@@ -943,8 +1152,10 @@ def generate_frames():
                 
                 # PAUSAR DETECCIÓN: Si ya se detectó correctamente, no procesar más gestos
                 if mode == 'translator':
-                    # Modo traductor: detectar con todos los modelos
-                    detected = detect_all_gestures(frame, landmarks)
+                    # Modo traductor: detectar con todos los modelos (incluyendo palabras)
+                    # Obtener todas las manos detectadas para palabras
+                    all_hand_landmarks = [hand_landmarks.landmark for hand_landmarks in results.multi_hand_landmarks] if results.multi_hand_landmarks else None
+                    detected = detect_all_gestures(frame, landmarks, all_hand_landmarks)
                     if detected:
                         translator_prediction = detected
                     else:
@@ -978,6 +1189,45 @@ def generate_frames():
                                     print(f"✗ Día detectado: {detected} (objetivo: {target_day}) - No coincide")
                     else:
                         current_day_prediction = "Grabando video..."
+                elif mode == 'words':
+                    # Modo de palabras (1 o 2 manos según el gesto)
+                    if word_detected:
+                        # Ya se detectó correctamente, mantener el mensaje y no procesar más
+                        if current_word_index < len(available_words):
+                            target_word = available_words[current_word_index]
+                            current_word_prediction = f"Palabra: {target_word} ✓"
+                        is_recording_word = False
+                        continue  # Saltar el procesamiento de detección
+                    
+                    # Verificar que se detecte al menos una mano
+                    num_hands = len(results.multi_hand_landmarks) if results.multi_hand_landmarks else 0
+                    if num_hands < 1:
+                        current_word_prediction = "Esperando mano(s)..."
+                        is_recording_word = False
+                        word_sequence = []  # Limpiar secuencia si no hay manos
+                        continue
+                    
+                    # Procesar detección solo si aún no se ha detectado correctamente
+                    is_recording_word = True
+                    # Obtener landmarks de todas las manos detectadas (1 o 2)
+                    all_hand_landmarks = [hand_landmarks.landmark for hand_landmarks in results.multi_hand_landmarks]
+                    detected = detect_word(frame, all_hand_landmarks)
+                    if detected:
+                        current_word_prediction = f"Palabra: {detected}"
+                        # Verificar si la palabra detectada coincide con la palabra objetivo
+                        if current_word_index < len(available_words):
+                            target_word = available_words[current_word_index]
+                            if detected == target_word:
+                                word_detected = True
+                                current_word_prediction = f"Palabra: {detected} ✓"
+                                is_recording_word = False
+                                if frame_count % 30 == 0:
+                                    print(f"✓✓✓ Palabra CORRECTA detectada: {detected} (objetivo: {target_word}) - Detección pausada")
+                            else:
+                                if frame_count % 30 == 0:
+                                    print(f"✗ Palabra detectada: {detected} (objetivo: {target_word}) - No coincide")
+                    else:
+                        current_word_prediction = "Grabando video..."
                 elif mode == 'months':
                     # Modo de meses
                     if month_detected:
@@ -1071,6 +1321,11 @@ def generate_frames():
                     current_day_prediction = "Esperando mano..."
                     is_recording_day = False
                     day_sequence = []  # Limpiar secuencia si no hay mano
+            elif mode == 'words':
+                if not word_detected:
+                    current_word_prediction = "Esperando mano(s)..."
+                    is_recording_word = False
+                    word_sequence = []  # Limpiar secuencia si no hay manos
             elif mode == 'months':
                 if not month_detected:
                     current_month_prediction = "Esperando mano..."
@@ -1406,6 +1661,89 @@ def reset_month_practice():
         "current_index": current_month_index,
         "target_month": available_months[current_month_index],
         "progress": f"{current_month_index + 1}/{len(available_months)}"
+    })
+
+# Rutas para palabras y expresiones
+@app.route('/palabras')
+def palabras():
+    global mode, word_sequence
+    mode = 'words'  # Establecer modo de palabras
+    word_sequence = []  # Limpiar secuencia al cambiar de modo
+    return render_template('palabras.html')
+
+@app.route('/get_word_prediction')
+def get_word_prediction():
+    global word_detected, is_recording_word
+    
+    # Extraer solo la palabra si viene en formato "Palabra: X"
+    detected_word = None
+    if current_word_prediction.startswith("Palabra: "):
+        detected_word = current_word_prediction.split(": ")[1].replace(" ✓", "")
+    
+    # Obtener la palabra objetivo actual
+    target_word = None
+    if current_word_index < len(available_words):
+        target_word = available_words[current_word_index]
+    
+    # Verificar nuevamente la comparación aquí para asegurar que sea correcta
+    if detected_word and target_word:
+        if detected_word == target_word:
+            word_detected = True
+    
+    return jsonify({
+        "prediction": current_word_prediction,
+        "detected_word": detected_word,
+        "target_word": target_word,
+        "word_detected": word_detected,
+        "current_index": current_word_index,
+        "total_words": len(available_words),
+        "progress": f"{current_word_index + 1}/{len(available_words)}",
+        "recording": is_recording_word,
+        "debug": {
+            "detected": detected_word,
+            "target": target_word,
+            "match": detected_word == target_word if detected_word and target_word else False,
+            "word_detected_state": word_detected
+        }
+    })
+
+@app.route('/next_word', methods=['POST'])
+def next_word():
+    global current_word_index, word_detected, current_word_prediction, word_sequence
+    print(f"→ Botón 'Siguiente Palabra' presionado. Índice actual: {current_word_index}")
+    if current_word_index < len(available_words) - 1:
+        current_word_index += 1
+        word_detected = False
+        current_word_prediction = "Esperando gesto..."  # Resetear mensaje
+        word_sequence = []  # Limpiar secuencia
+        print(f"→ Avanzando a la palabra: {available_words[current_word_index]} ({current_word_index + 1}/{len(available_words)})")
+        return jsonify({
+            "success": True,
+            "current_index": current_word_index,
+            "target_word": available_words[current_word_index],
+            "progress": f"{current_word_index + 1}/{len(available_words)}"
+        })
+    else:
+        # Ya se completaron todas las palabras
+        print("→ ¡Todas las palabras completadas!")
+        return jsonify({
+            "success": True,
+            "completed": True,
+            "message": "¡Felicidades! Has completado todas las palabras y expresiones."
+        })
+
+@app.route('/reset_word_practice', methods=['POST'])
+def reset_word_practice():
+    global current_word_index, word_detected, current_word_prediction, word_sequence
+    current_word_index = 0
+    word_detected = False
+    current_word_prediction = "Esperando gesto..."  # Resetear mensaje de predicción
+    word_sequence = []  # Limpiar secuencia
+    return jsonify({
+        "success": True,
+        "current_index": current_word_index,
+        "target_word": available_words[current_word_index],
+        "progress": f"{current_word_index + 1}/{len(available_words)}"
     })
 
 # Rutas para días
