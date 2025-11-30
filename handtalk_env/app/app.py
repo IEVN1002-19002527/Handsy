@@ -5,6 +5,7 @@ CONFIGURACIÓN DEL MODELO:
 - El modelo reentrenado se guarda en: model/gesture_model_camera.h5
 """
 from flask import Flask, render_template, Response, request, jsonify
+from flask_cors import CORS
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -12,6 +13,8 @@ from gtts import gTTS
 import os
 import random
 app = Flask(__name__)
+# Habilitar CORS para permitir peticiones desde Angular
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 model = None
 number_model = None  # Modelo separado para números
@@ -43,6 +46,7 @@ available_numbers = ['0', '1', '2', '3', '4', '5']  # Números del 0 al 5
 current_number_index = 0  # Índice del número objetivo actual
 number_detected = False  # Si el número objetivo fue detectado correctamente
 current_number_prediction = "Esperando gesto..."  # Predicción actual para números
+number_sequence = []  # Buffer para almacenar secuencia de frames (si se necesita en el futuro)
 
 # Variables globales para el modo de práctica mes por mes
 available_months = ['enero', 'febrero', 'marzo', 'abril']  # Solo enero a abril
@@ -1397,29 +1401,60 @@ def generate_frames():
 def index():
     global mode
     mode = 'letters'  # Establecer modo de letras
-    return render_template('index.html')
+    return render_template('letras.html')
 
-@app.route('/numeros')
+@app.route('/modulos/letra')
+def letras():
+    global mode
+    mode = 'letters'  # Establecer modo de letras
+    return render_template('letras.html')
+
+@app.route('/set_mode', methods=['POST'])
+def set_mode():
+    global mode, number_sequence, month_sequence, day_sequence, translator_sequence
+    data = request.get_json()
+    new_mode = data.get('mode', 'letters')
+    
+    if new_mode == 'numbers':
+        mode = 'numbers'
+        number_sequence = []
+    elif new_mode == 'months':
+        mode = 'months'
+        month_sequence = []
+    elif new_mode == 'days':
+        mode = 'days'
+        day_sequence = []
+    elif new_mode == 'words':
+        mode = 'words'
+    elif new_mode == 'translator':
+        mode = 'translator'
+        translator_sequence = []
+    else:
+        mode = 'letters'
+    
+    return jsonify({"success": True, "mode": mode})
+
+@app.route('/modulos/numero')
 def numeros():
     global mode
     mode = 'numbers'  # Establecer modo de números
     return render_template('numeros.html')
 
-@app.route('/meses')
+@app.route('/modulos/mes')
 def meses():
     global mode, month_sequence
     mode = 'months'  # Establecer modo de meses
     month_sequence = []  # Limpiar secuencia al cambiar de modo
     return render_template('meses.html')
 
-@app.route('/dias')
+@app.route('/modulos/dia')
 def dias():
     global mode, day_sequence
     mode = 'days'  # Establecer modo de días
     day_sequence = []  # Limpiar secuencia al cambiar de modo
     return render_template('dias.html')
 
-@app.route('/traductor')
+@app.route('/modulos/traductor')
 def traductor():
     global mode, translator_sequence, translator_prediction
     mode = 'translator'  # Establecer modo traductor
@@ -1664,7 +1699,7 @@ def reset_month_practice():
     })
 
 # Rutas para palabras y expresiones
-@app.route('/palabras')
+@app.route('/modulos/palabra')
 def palabras():
     global mode, word_sequence
     mode = 'words'  # Establecer modo de palabras
@@ -1852,4 +1887,10 @@ def tts():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    print("\n" + "="*60)
+    print("🚀 INICIANDO SERVIDOR FLASK")
+    print("="*60)
+    print("📡 Servidor disponible en: http://localhost:5000")
+    print("📹 Video feed disponible en: http://localhost:5000/video_feed")
+    print("="*60 + "\n")
+    app.run(debug=True, host='0.0.0.0', port=5000)

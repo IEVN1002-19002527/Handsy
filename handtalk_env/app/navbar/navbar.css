@@ -1,0 +1,74 @@
+/* Estilos básicos para el navbar - Sin dependencias externas */
+nav {
+  display: block !important;
+  width: 100% !important;
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding: 1rem 0 !important;
+  position: relative !important;
+  z-index: 1000 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+.navbar-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: #1f2937;
+  font-weight: bold;
+  font-size: 1.25rem;
+}
+
+.navbar-brand:hover {
+  color: #3b82f6;
+}
+
+.navbar-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 1.5rem;
+  flex-direction: row;
+  align-items: center;
+}
+
+.navbar-menu li {
+  margin: 0;
+  padding: 0;
+}
+
+.navbar-menu a {
+  display: block;
+  padding: 0.5rem 1rem;
+  color: #1f2937;
+  text-decoration: none;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s, color 0.2s;
+  font-weight: 500;
+}
+
+.navbar-menu a:hover {
+  background-color: #f3f4f6;
+}
+
+.navbar-menu a.active {
+  background-color: #3b82f6;
+  color: #ffffff;
+}
+
+/* Asegurar visibilidad */
+app-navbar {
+  display: block !important;
+  width: 100% !important;
+}

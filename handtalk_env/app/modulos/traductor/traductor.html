@@ -1,0 +1,254 @@
+<style>
+    * {
+        box-sizing: border-box;
+    }
+    
+    h1 {
+        text-align: center;
+        color: #1a237e;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 30px 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .main-container {
+        display: flex;
+        gap: 40px;
+        align-items: flex-start;
+        margin: 30px auto;
+        max-width: 1600px;
+        padding: 0 20px;
+    }
+    
+    .video-container {
+        flex: 1;
+        position: relative;
+        min-width: 0;
+    }
+    
+    .video-container img {
+        width: 100%;
+        max-width: 640px;
+        height: auto;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 3px;
+        display: block;
+        transition: transform 0.3s ease;
+    }
+    
+    .video-container img:hover {
+        transform: scale(1.02);
+    }
+    
+    .video-status {
+        margin-top: 15px;
+        text-align: center;
+        color: #666;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 8px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 10px;
+    }
+    
+    .translation-panel {
+        flex: 0 0 550px;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border-radius: 20px;
+        padding: 35px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1), 0 5px 15px rgba(0,0,0,0.07);
+        border: 1px solid rgba(255,255,255,0.8);
+        display: flex;
+        flex-direction: column;
+        height: fit-content;
+    }
+    
+    .status-indicator {
+        text-align: center;
+        padding: 15px;
+        background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+        border-radius: 12px;
+        font-size: 15px;
+        color: #666;
+        margin-bottom: 20px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .status-indicator.detecting {
+        background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
+        color: #856404;
+        box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+        animation: pulse-yellow 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes pulse-yellow {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.9; }
+    }
+    
+    .current-detection {
+        margin-bottom: 25px;
+        padding: 20px;
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border-radius: 15px;
+        border-left: 5px solid #2196F3;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+    }
+    
+    .current-label {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .current-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1976d2;
+        min-height: 40px;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .translation-area {
+        flex: 1;
+        margin-bottom: 25px;
+    }
+    
+    .translation-label {
+        font-size: 16px;
+        color: #495057;
+        margin-bottom: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .translation-text {
+        width: 100%;
+        min-height: 320px;
+        padding: 20px;
+        border: 2px solid #dee2e6;
+        border-radius: 15px;
+        font-size: 18px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        resize: vertical;
+        background: linear-gradient(135deg, #fafafa 0%, #ffffff 100%);
+        line-height: 1.8;
+        transition: all 0.3s ease;
+        box-shadow: inset 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .translation-text:focus {
+        outline: none;
+        border-color: #2196F3;
+        background: #ffffff;
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1), inset 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .button-container {
+        display: flex;
+        gap: 12px;
+        margin-top: 15px;
+    }
+    
+    button {
+        flex: 1;
+        padding: 16px 24px;
+        font-size: 16px;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    button.clear-btn {
+        background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        color: white;
+    }
+    
+    button.clear-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 152, 0, 0.4);
+    }
+    
+    button.clear-btn:active {
+        transform: translateY(0);
+    }
+    
+    button.space-btn {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+    }
+    
+    button.space-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+    }
+    
+    button.space-btn:active {
+        transform: translateY(0);
+    }
+    
+    @media (max-width: 1024px) {
+        .main-container {
+            flex-direction: column;
+        }
+        
+        .translation-panel {
+            flex: 1;
+            width: 100%;
+        }
+    }
+</style>
+
+<h1>Traductor de Lenguaje de Señas</h1>
+
+<div class="main-container">
+    <div class="video-container">
+        <img [src]="videoFeedUrl" 
+             alt="Video stream de la cámara"
+             (error)="onImageError($event)"/>
+        <div class="video-status">
+            📹 Conectando cámara...
+        </div>
+    </div>
+    
+    <div class="translation-panel">
+        <div class="status-indicator" [class.detecting]="isDetecting">
+            {{ isDetecting ? '🔍 Detectando...' : '⏳ Esperando detección...' }}
+        </div>
+        
+        <div class="current-detection">
+            <div class="current-label">Detección actual</div>
+            <div class="current-value">{{ currentDetection }}</div>
+        </div>
+        
+        <div class="translation-area">
+            <div class="translation-label">Texto traducido</div>
+            <textarea class="translation-text" 
+                      [(ngModel)]="translationText"
+                      placeholder="Las detecciones aparecerán aquí..."></textarea>
+        </div>
+        
+        <div class="button-container">
+            <button class="space-btn" (click)="addSpace()">➕ Agregar Espacio</button>
+            <button class="clear-btn" (click)="clearText()">🗑️ Limpiar Texto</button>
+        </div>
+    </div>
+</div>

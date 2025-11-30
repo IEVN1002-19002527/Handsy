@@ -1,0 +1,303 @@
+<style>
+    * {
+        box-sizing: border-box;
+    }
+    
+    h1 {
+        text-align: center;
+        color: #1a237e;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 30px 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .main-container {
+        display: flex;
+        gap: 40px;
+        align-items: flex-start;
+        margin: 30px auto;
+        max-width: 1400px;
+        padding: 0 20px;
+    }
+    
+    .video-container {
+        flex: 1;
+        position: relative;
+    }
+    
+    .video-container img {
+        width: 100%;
+        max-width: 640px;
+        height: auto;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        padding: 3px;
+        display: block;
+        transition: transform 0.3s ease;
+    }
+    
+    .video-container img:hover {
+        transform: scale(1.02);
+    }
+    
+    .video-status {
+        margin-top: 15px;
+        text-align: center;
+        color: #666;
+        font-size: 14px;
+        font-weight: 500;
+        padding: 8px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 10px;
+    }
+    
+    .info-panel {
+        flex: 0 0 400px;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border-radius: 20px;
+        padding: 35px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1), 0 5px 15px rgba(0,0,0,0.07);
+        border: 1px solid rgba(255,255,255,0.8);
+    }
+    
+    .recording-indicator {
+        text-align: center;
+        padding: 15px;
+        background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+        color: white;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 25px;
+        box-shadow: 0 6px 20px rgba(255, 65, 108, 0.4);
+        animation: pulse-red 1.5s ease-in-out infinite;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    @keyframes pulse-red {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+    
+    .target-month {
+        text-align: center;
+        margin-bottom: 35px;
+        padding: 25px;
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        border-radius: 15px;
+        box-shadow: 0 8px 20px rgba(250, 112, 154, 0.3);
+    }
+    
+    .target-label {
+        font-size: 16px;
+        color: rgba(255,255,255,0.9);
+        margin-bottom: 15px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .target-month-display {
+        font-size: 72px;
+        font-weight: 900;
+        color: #ffffff;
+        margin: 20px 0;
+        text-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        word-wrap: break-word;
+        line-height: 1.2;
+    }
+    
+    .detected-month {
+        text-align: center;
+        margin-bottom: 35px;
+        padding: 25px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 15px;
+        border: 2px solid #dee2e6;
+        transition: all 0.3s ease;
+    }
+    
+    .detected-month.correct {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border-color: #28a745;
+        box-shadow: 0 8px 20px rgba(40, 167, 69, 0.3);
+    }
+    
+    .detected-label {
+        font-size: 14px;
+        color: #6c757d;
+        margin-bottom: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .detected-month-display {
+        font-size: 40px;
+        font-weight: 700;
+        color: #495057;
+        word-wrap: break-word;
+        transition: all 0.3s ease;
+    }
+    
+    .detected-month-display.correct {
+        color: #28a745;
+        animation: pulse 0.6s ease;
+        transform: scale(1.1);
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.15); }
+        100% { transform: scale(1.1); }
+    }
+    
+    .progress {
+        text-align: center;
+        font-size: 18px;
+        color: #495057;
+        margin-bottom: 25px;
+        padding: 15px;
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border-radius: 12px;
+        font-weight: 600;
+        box-shadow: 0 4px 10px rgba(33, 150, 243, 0.2);
+    }
+    
+    .button-container {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    button {
+        padding: 16px 32px;
+        font-size: 16px;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    button:not(:disabled) {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+    }
+    
+    button:not(:disabled):hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+    }
+    
+    button:not(:disabled):active {
+        transform: translateY(0);
+    }
+    
+    button:disabled {
+        background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+        color: #adb5bd;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+    
+    button.reset-btn {
+        background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        color: white;
+    }
+    
+    button.reset-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 152, 0, 0.4);
+    }
+    
+    .success-message {
+        text-align: center;
+        padding: 25px;
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        border-radius: 15px;
+        font-size: 18px;
+        font-weight: 600;
+        margin-top: 25px;
+        box-shadow: 0 8px 20px rgba(40, 167, 69, 0.3);
+        animation: slideIn 0.5s ease;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @media (max-width: 1024px) {
+        .main-container {
+            flex-direction: column;
+        }
+        
+        .info-panel {
+            flex: 1;
+            width: 100%;
+        }
+    }
+</style>
+
+<h1>Práctica de Lenguaje de Señas - Meses (Enero-Abril)</h1>
+
+<div class="main-container">
+    <div class="video-container">
+        <img [src]="videoFeedUrl" 
+             alt="Video stream de la cámara"
+             (error)="onImageError($event)"/>
+        <div class="video-status">
+            📹 Conectando cámara...
+        </div>
+    </div>
+    
+    <div class="info-panel">
+        <div class="recording-indicator" *ngIf="isRecording">
+            🔴 GRABANDO VIDEO...
+        </div>
+        
+        <div class="target-month">
+            <div class="target-label">Mes objetivo</div>
+            <div class="target-month-display" [class.correct]="monthDetected">{{ targetMonth }}</div>
+        </div>
+        
+        <div class="detected-month" [class.correct]="monthDetected">
+            <div class="detected-label">Mes detectado</div>
+            <div class="detected-month-display" [class.correct]="monthDetected">{{ detectedMonth }}</div>
+        </div>
+        
+        <div class="progress">📊 Progreso: {{ progress }}</div>
+        
+        <div class="button-container">
+            <button (click)="nextMonth()" [disabled]="!monthDetected || isCompleted">
+                ➡️ Siguiente Mes
+            </button>
+            <button class="reset-btn" (click)="resetPractice()">
+                🔄 Reiniciar Práctica
+            </button>
+        </div>
+        
+        <div class="success-message" *ngIf="isCompleted">
+            🎉 ¡Felicidades! Has completado todos los meses (enero-abril).
+        </div>
+    </div>
+</div>
